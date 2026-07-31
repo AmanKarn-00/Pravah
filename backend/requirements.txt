@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+networkx
+osmnx
+httpx
+pydantic
+python-dotenv
+google-genai

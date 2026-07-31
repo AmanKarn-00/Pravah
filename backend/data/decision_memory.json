@@ -1,0 +1,14 @@
+[
+  {
+    "event": "Lane Closure",
+    "location": "Bhaktapur-Banepa",
+    "date": "2026-06-10",
+    "result": "Heavy congestion observed during peak hours due to lane closure. Recommend scheduling closure during night time."
+  },
+  {
+    "event": "Bridge Repair",
+    "location": "Sunkoshi Bridge",
+    "date": "2025-08-15",
+    "result": "Complete closure resulted in 4-hour detour delays. Bailey bridge deployment is strictly required for future repairs of this scale."
+  }
+]
