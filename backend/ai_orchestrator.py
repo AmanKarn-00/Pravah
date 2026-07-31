@@ -263,7 +263,61 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
         return
         
     clarification = None
-    yield 'data: ' + json.dumps({"type": "log", "message": "Multi-agent context complete. Running expert deliberation + scenario analysis..."}) + "\n\n"
+    yield 'data: ' + json.dumps({"type": "log", "message": "Multi-agent context complete. Running baseline comparison..."}) + "\n\n"
+    
+    # ── 3b. Automatic Baseline vs Optimized Comparison ──
+    from tools import compute_naive_baseline, compute_optimized_route
+    
+    closed_road_name = extracted.get("road", "")
+    # Also try to get it from simulation results
+    sim_res_early = tool_results_dict.get("simulate_route_closure", {})
+    if not closed_road_name and sim_res_early:
+        closed_road_name = sim_res_early.get("closed_road", "Road B (Jagati)")
+    if not closed_road_name:
+        closed_road_name = "Road B (Jagati)"
+    
+    baseline_result = None
+    optimized_result = None
+    
+    try:
+        yield 'data: ' + json.dumps({"type": "step_start", "name": "compute_naive_baseline"}) + "\n\n"
+        b_start = time.time()
+        baseline_result = compute_naive_baseline(closed_road=closed_road_name)
+        b_dur = int((time.time() - b_start) * 1000)
+        tool_results_dict["compute_naive_baseline"] = baseline_result
+        yield 'data: ' + json.dumps({"type": "step_end", "name": "compute_naive_baseline", "status": "success", "duration": f"{b_dur} ms", "result": baseline_result}, default=str) + "\n\n"
+    except Exception as e:
+        print(f"Baseline error: {e}")
+        yield 'data: ' + json.dumps({"type": "step_end", "name": "compute_naive_baseline", "status": "error", "duration": "0 ms", "result": str(e)}) + "\n\n"
+    
+    try:
+        yield 'data: ' + json.dumps({"type": "step_start", "name": "compute_optimized_route"}) + "\n\n"
+        o_start = time.time()
+        optimized_result = compute_optimized_route(closed_road=closed_road_name)
+        o_dur = int((time.time() - o_start) * 1000)
+        tool_results_dict["compute_optimized_route"] = optimized_result
+        yield 'data: ' + json.dumps({"type": "step_end", "name": "compute_optimized_route", "status": "success", "duration": f"{o_dur} ms", "result": optimized_result}, default=str) + "\n\n"
+    except Exception as e:
+        print(f"Optimized error: {e}")
+        yield 'data: ' + json.dumps({"type": "step_end", "name": "compute_optimized_route", "status": "error", "duration": "0 ms", "result": str(e)}) + "\n\n"
+    
+    # Build comparison object
+    comparison = None
+    if baseline_result and optimized_result and "error" not in baseline_result and "error" not in optimized_result:
+        baseline_score = baseline_result.get("risk_adjusted_score", 999)
+        optimized_score = optimized_result.get("risk_adjusted_score", 999)
+        improvement = round((baseline_score - optimized_score) / baseline_score * 100, 1) if baseline_score > 0 else 0
+        
+        comparison = {
+            "baseline": baseline_result,
+            "optimized": optimized_result,
+            "improvement_pct": improvement,
+            "winner": "optimized" if optimized_score < baseline_score else "baseline",
+            "metric": "Risk-Adjusted Decision Cost (lower = better)",
+            "metric_formula": "Score = TravelTime×1 + SafetyRisk×50 + AmbulanceDelay×5 + EconCost×0.001"
+        }
+    
+    yield 'data: ' + json.dumps({"type": "log", "message": "Running expert deliberation + scenario analysis..."}) + "\n\n"
     
     context = f"Extracted: {json.dumps(extracted)}\nTool Results: {json.dumps(tool_results_dict, default=str)}"
     
@@ -397,6 +451,7 @@ Finally, provide a recommended decision, Nepali public notice, and SMS alert."""
         "memory": memory_results,
         "context": tool_results_dict,
         "scenarios": scenarios,
+        "comparison": comparison,
         "experts": {
             "traffic": {
                 "recommendation": resolution.get("traffic_recommendation", ""),
@@ -427,3 +482,4 @@ Finally, provide a recommended decision, Nepali public notice, and SMS alert."""
     }
     
     yield 'data: ' + json.dumps({"type": "final", "data": final_payload}, default=str) + "\n\n"
+

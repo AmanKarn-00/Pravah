@@ -5,6 +5,7 @@ import ExpertPanel from './components/ExpertPanel';
 import EvidencePanel from './components/EvidencePanel';
 import MemoryPanel from './components/MemoryPanel';
 import ScenarioPanel from './components/ScenarioPanel';
+import BaselineComparison from './components/BaselineComparison';
 import PipelineVisualizer from './components/PipelineVisualizer';
 import ParticlesBackground from './components/ParticlesBackground';
 import { Activity, HardHat, CheckCircle2, MessageSquare, AlertTriangle, Siren, BarChart3 } from 'lucide-react';
@@ -249,6 +250,9 @@ function App() {
               {appState.memory && appState.memory.length > 0 && (
                 <MemoryPanel memory={appState.memory} />
               )}
+
+              {/* Baseline vs Optimized Comparison */}
+              {appState.comparison && <BaselineComparison comparison={appState.comparison} />}
 
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
                 <ExpertPanel 

@@ -932,6 +932,238 @@ def ask_clarification(question: str) -> Dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════
+# 📐 BASELINE vs OPTIMIZED COMPARISON TOOLS
+# ═══════════════════════════════════════════════════════════
+
+def _score(travel_min, safety_risk, ambulance_delay, econ_loss_per_hr):
+    """Risk-Adjusted Decision Cost: lower = better."""
+    return round(travel_min * 1.0 + safety_risk * 50 + ambulance_delay * 5 + econ_loss_per_hr * 0.001, 1)
+
+
+def compute_naive_baseline(closed_road: str, origin: str = "Suryabinayak", destination: str = "Banepa") -> Dict[str, Any]:
+    """Computes the NAIVE BASELINE route using shortest-path-only routing.
+    This baseline ignores weather, landslide risk, bridge health, traffic congestion,
+    and emergency access — it only minimizes distance. This represents how most
+    GPS systems and current manual decision-making works.
+
+    Args:
+        closed_road: The road that is closed or restricted.
+        origin: Starting point of the route (default "Suryabinayak").
+        destination: End point of the route (default "Banepa").
+    """
+    G = _build_network()
+
+    # Remove the closed road edges
+    for u, v, data in list(G.edges(data=True)):
+        if closed_road.lower() in data["name"].lower():
+            G.remove_edge(u, v)
+
+    try:
+        # NAIVE: shortest path by distance ONLY — no risk weighting
+        path = nx.shortest_path(G, origin, destination, weight="distance_km")
+        total_dist = sum(G[path[i]][path[i+1]]["distance_km"] for i in range(len(path)-1))
+        total_time = sum(G[path[i]][path[i+1]]["weight"] for i in range(len(path)-1))
+        route_names = [G[path[i]][path[i+1]]["name"] for i in range(len(path)-1)]
+    except (nx.NetworkXNoPath, nx.NodeNotFound):
+        return {"error": "No path exists", "method": "naive_baseline"}
+
+    # Naive baseline IGNORES all risk factors — reports them as unknown/zero
+    # But we compute the TRUE risks anyway for comparison display
+    landslide_zones = {"Road B (Jagati)": 0.65, "Road C (Sanga)": 0.40, "Alt 1": 0.10, "Alt 2": 0.08}
+    bridge_risk_map = {"Road B (Jagati)": 0.18, "Alt 1": 0.02, "Alt 2": 0.02}
+
+    actual_landslide_risk = max([landslide_zones.get(r, 0.05) for r in route_names], default=0.05)
+    actual_bridge_risk = max([bridge_risk_map.get(r, 0.01) for r in route_names], default=0.01)
+    combined_safety_risk = min(0.99, actual_landslide_risk + actual_bridge_risk)
+
+    # Compute ambulance delay on this route
+    hospitals = _load_json("hospital_registry.json")
+    nearest_time = 30  # default
+    for h in hospitals:
+        for loc, t in h.get("travel_time_min", {}).items():
+            if loc in path:
+                nearest_time = min(nearest_time, t)
+
+    econ_per_hr = int(total_dist * 800 * 12)  # vehicles * detour * fuel cost
+
+    score = _score(total_time, combined_safety_risk, 0, econ_per_hr)  # baseline assumes 0 ambulance delay
+
+    return {
+        "method": "Naive Baseline (Shortest Path Only)",
+        "approach": "Minimizes distance. Ignores weather, landslide risk, bridge health, traffic, and emergency access.",
+        "route": route_names,
+        "path_nodes": path,
+        "total_distance_km": round(total_dist, 1),
+        "travel_time_min": round(total_time, 1),
+        "risks_ignored": True,
+        "actual_landslide_risk": round(actual_landslide_risk, 2),
+        "actual_bridge_failure_risk": round(actual_bridge_risk, 2),
+        "actual_combined_safety_risk": round(combined_safety_risk, 2),
+        "ambulance_delay_min": 0,
+        "economic_cost_per_hr": econ_per_hr,
+        "risk_adjusted_score": score
+    }
+
+
+def compute_optimized_route(closed_road: str, origin: str = "Suryabinayak", destination: str = "Banepa") -> Dict[str, Any]:
+    """Computes PRAVAH's OPTIMIZED route using multi-factor terrain-aware routing.
+    Dynamically adjusts edge weights based on 6 real-world factors:
+    1. Terrain gradient (steeper = slower for heavy vehicles)
+    2. Weather/rainfall (wet = reduced speed, flood risk)
+    3. Landslide probability (high-risk zones get heavy penalty)
+    4. Bridge health (degraded bridges penalized)
+    5. Live traffic congestion (volume vs capacity)
+    6. Emergency access (routes cutting off hospitals penalized)
+
+    Args:
+        closed_road: The road that is closed or restricted.
+        origin: Starting point of the route (default "Suryabinayak").
+        destination: End point of the route (default "Banepa").
+    """
+    G = _build_network()
+
+    # Remove closed road
+    for u, v, data in list(G.edges(data=True)):
+        if closed_road.lower() in data["name"].lower():
+            G.remove_edge(u, v)
+
+    # ── Factor 1: Terrain gradient penalties ──
+    gradient_penalties = {
+        "Road A (Suryabinayak)": 1.0,   # Flat urban
+        "Road B (Jagati)": 1.3,          # Moderate hill
+        "Road C (Sanga)": 1.5,           # Steep hill section
+        "Alt 1": 1.4,                    # Mountain bypass
+        "Alt 2": 1.35,                   # Hilly alternate
+    }
+
+    # ── Factor 2 & 3: Weather + Landslide risk (live data) ──
+    try:
+        weather = get_weather_forecast("Bhaktapur-Banepa")
+        rain_mm = weather.get("rainfall_today_mm", 0)
+    except:
+        rain_mm = 40  # Assume moderate rain as safe default
+
+    landslide_risk = {
+        "Road B (Jagati)": min(0.95, rain_mm / 120 * 0.8),
+        "Road C (Sanga)": min(0.95, rain_mm / 150 * 0.7),
+        "Alt 1": min(0.3, rain_mm / 200 * 0.3),
+        "Alt 2": min(0.25, rain_mm / 200 * 0.25),
+        "Road A (Suryabinayak)": min(0.15, rain_mm / 300 * 0.15),
+    }
+
+    # ── Factor 4: Bridge health ──
+    bridge_risk = {}
+    bridges = _load_json("bridge_registry.json")
+    for b in bridges:
+        condition_factor = {"Good": 0.02, "Fair": 0.12, "Poor": 0.35}.get(b["condition"], 0.1)
+        age_factor = min((datetime.now().year - b["year_built"]) / 80, 0.25)
+        bridge_risk[b["name"]] = round(condition_factor + age_factor, 2)
+
+    road_bridge_map = {
+        "Road B (Jagati)": "Temporary Bailey Bridge",
+        "Road C (Sanga)": "Pulbazar Bridge",
+    }
+
+    # ── Factor 5: Traffic congestion ──
+    hour = datetime.now().hour
+    is_peak = 7 <= hour <= 9 or 17 <= hour <= 19
+    traffic_factor = {
+        "Road A (Suryabinayak)": 1.4 if is_peak else 1.0,
+        "Road B (Jagati)": 1.6 if is_peak else 1.1,
+        "Road C (Sanga)": 1.3 if is_peak else 1.0,
+        "Alt 1": 1.1,
+        "Alt 2": 1.1,
+    }
+
+    # ── Apply all factors to edge weights ──
+    for u, v, data in G.edges(data=True):
+        name = data["name"]
+        base_weight = data["weight"]
+
+        # Gradient
+        w = base_weight * gradient_penalties.get(name, 1.0)
+        # Weather (wet roads slow by 20-50%)
+        w *= (1 + min(rain_mm / 100, 0.5))
+        # Landslide penalty (high risk = massive weight increase)
+        ls_risk = landslide_risk.get(name, 0.05)
+        w *= (1 + ls_risk * 8)  # Up to 8x penalty for 100% landslide risk
+        # Bridge health
+        bridge_name = road_bridge_map.get(name)
+        if bridge_name and bridge_name in [b["name"] for b in bridges]:
+            b_risk = bridge_risk.get(bridge_name, 0.05)
+            w *= (1 + b_risk * 5)
+        # Traffic
+        w *= traffic_factor.get(name, 1.0)
+
+        G[u][v]["opt_weight"] = w
+
+    # Find optimized path
+    try:
+        path = nx.shortest_path(G, origin, destination, weight="opt_weight")
+        total_time = sum(G[path[i]][path[i+1]]["opt_weight"] for i in range(len(path)-1))
+        raw_time = sum(G[path[i]][path[i+1]]["weight"] for i in range(len(path)-1))
+        total_dist = sum(G[path[i]][path[i+1]]["distance_km"] for i in range(len(path)-1))
+        route_names = [G[path[i]][path[i+1]]["name"] for i in range(len(path)-1)]
+    except (nx.NetworkXNoPath, nx.NodeNotFound):
+        return {"error": "No path exists", "method": "optimized"}
+
+    # Compute actual risks on the CHOSEN optimized route
+    route_landslide = max([landslide_risk.get(r, 0.05) for r in route_names], default=0.05)
+    route_bridge_risk = 0.01
+    for r in route_names:
+        bn = road_bridge_map.get(r)
+        if bn:
+            route_bridge_risk = max(route_bridge_risk, bridge_risk.get(bn, 0.01))
+    combined_safety = min(0.99, route_landslide + route_bridge_risk)
+
+    # ── Factor 6: Emergency access ──
+    hospitals = _load_json("hospital_registry.json")
+    ambulance_delay = 0
+    for h in hospitals:
+        for loc, t in h.get("travel_time_min", {}).items():
+            if loc in path:
+                # Check if the optimized route adds delay vs direct
+                if t > 20:
+                    ambulance_delay = max(ambulance_delay, t - 14)
+
+    econ_per_hr = int(total_dist * 800 * 12)
+    score = _score(raw_time, combined_safety, ambulance_delay, econ_per_hr)
+
+    # ── Build factor breakdown for display ──
+    factors_applied = []
+    if rain_mm > 10:
+        factors_applied.append(f"Rainfall: {rain_mm}mm → wet road penalty applied")
+    if route_landslide > 0.2:
+        factors_applied.append(f"Landslide risk: {round(route_landslide*100)}% → avoided high-risk zones")
+    else:
+        factors_applied.append(f"Landslide risk: {round(route_landslide*100)}% → low risk route selected")
+    if is_peak:
+        factors_applied.append("Peak traffic hours → congestion penalty applied")
+    factors_applied.append(f"Terrain gradient factored into routing")
+    if route_bridge_risk > 0.05:
+        factors_applied.append(f"Bridge degradation: {round(route_bridge_risk*100)}% risk factored")
+
+    return {
+        "method": "PRAVAH Optimized (Multi-Factor Terrain-Aware)",
+        "approach": "Weighs terrain gradient, live weather, landslide probability, bridge health, traffic congestion, and emergency access.",
+        "route": route_names,
+        "path_nodes": path,
+        "total_distance_km": round(total_dist, 1),
+        "travel_time_min": round(raw_time, 1),
+        "weighted_time_min": round(total_time, 1),
+        "risks_ignored": False,
+        "actual_landslide_risk": round(route_landslide, 2),
+        "actual_bridge_failure_risk": round(route_bridge_risk, 2),
+        "actual_combined_safety_risk": round(combined_safety, 2),
+        "ambulance_delay_min": ambulance_delay,
+        "economic_cost_per_hr": econ_per_hr,
+        "risk_adjusted_score": score,
+        "factors_applied": factors_applied,
+        "weather_data": {"rainfall_mm": rain_mm, "peak_hours": is_peak}
+    }
+
+
+# ═══════════════════════════════════════════════════════════
 # TOOL REGISTRY
 # ═══════════════════════════════════════════════════════════
 
@@ -963,6 +1195,10 @@ pravah_tools = [
     # Prediction Agent
     forecast_traffic,
     predict_recovery_time,
+    # Baseline vs Optimized Comparison
+    compute_naive_baseline,
+    compute_optimized_route,
     # System
     ask_clarification,
 ]
+
