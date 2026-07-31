@@ -142,8 +142,16 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
             model="gemma-4-31b-it",
             config=types.GenerateContentConfig(
                 tools=pravah_tools,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                    disable=True
+                ),
+                tool_config=types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(
+                        mode="AUTO"
+                    )
+                ),
                 temperature=0.2,
-                system_instruction="You are an AI orchestrator. Use the provided tools to gather required context. Call ask_clarification if additional information is needed."
+                system_instruction="You are an AI infrastructure decision orchestrator. Use the available tools whenever you need external information. If required information is missing, call ask_clarification. Never invent data."
             ),
             history=gemini_history,
         )
@@ -173,11 +181,11 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
             except Exception:
                 print("Could not print text")
 
-            # Ensure response has some content for the SDK
-            if not response.text or not response.text.strip():
-                response_text = "NO_TOOL"
-            else:
-                response_text = response.text
+            # Capture text response if any
+            try:
+                response_text = response.text or ""
+            except Exception:
+                response_text = ""
 
             # Extract function calls from the response (new SDK pattern)
             func_calls = []
@@ -201,15 +209,16 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
             yield 'data: ' + json.dumps({"type": "log", "message": f"Gemini API Error in tool loop: {e}. Falling back."}) + "\n\n"
             break
 
-        # If no function calls were extracted, handle NO_TOOL or plain text response
+        # If no function calls were extracted, the model is done with tool use
         if not func_calls:
-            if response_text and "NO_TOOL" in response_text:
-                print("Model indicated no further tools needed (NO_TOOL).")
-                break
-            yield 'data: ' + json.dumps({"type": "log", "message": f"Gemini replied without tools: {response_text}"}) + "\n\n"
+            if response_text:
+                yield 'data: ' + json.dumps({"type": "log", "message": f"Gemini concluded: {response_text[:200]}"}) + "\n\n"
+            else:
+                yield 'data: ' + json.dumps({"type": "log", "message": "Tool gathering phase complete."}) + "\n\n"
             break
 
         print("6 Entering tool loop")
+        function_responses = []
         for fc in func_calls:
             tool_name = fc.name
             args = fc.args
@@ -228,15 +237,18 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
                     result = {"error": str(e)}
                     yield 'data: ' + json.dumps({"type": "step_end", "name": tool_name, "status": "error", "duration": "0 ms", "result": str(e)}) + "\n\n"
                 
-                prompt = [types.Part.from_function_response(
+                function_responses.append(types.Part.from_function_response(
                     name=tool_name,
                     response={"result": result}
-                )]
+                ))
             else:
-                prompt = [types.Part.from_function_response(
+                function_responses.append(types.Part.from_function_response(
                     name=tool_name,
                     response={"error": "Tool not found"}
-                )]
+                ))
+        
+        # Send ALL function responses back together for the next turn
+        prompt = function_responses
                 
     # 3. Dynamic Clarification
     if "ask_clarification" in tool_results_dict:
