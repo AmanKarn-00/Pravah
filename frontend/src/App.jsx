@@ -4,9 +4,10 @@ import MapWidget from './components/MapWidget';
 import ExpertPanel from './components/ExpertPanel';
 import EvidencePanel from './components/EvidencePanel';
 import MemoryPanel from './components/MemoryPanel';
+import ScenarioPanel from './components/ScenarioPanel';
 import PipelineVisualizer from './components/PipelineVisualizer';
 import ParticlesBackground from './components/ParticlesBackground';
-import { Activity, HardHat, CheckCircle2, MessageSquare, AlertTriangle } from 'lucide-react';
+import { Activity, HardHat, CheckCircle2, MessageSquare, AlertTriangle, Siren, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 
@@ -18,7 +19,6 @@ function App() {
   const [currentConfidence, setCurrentConfidence] = useState(0);
   const [chatHistory, setChatHistory] = useState([]);
   
-  // Use refs to avoid stale closures in the async while loop
   const demoStateRef = React.useRef('IDLE');
   const [demoState, setReactDemoState] = useState('IDLE');
   const setDemoState = (state) => {
@@ -160,21 +160,30 @@ function App() {
       
       setTimeout(() => {
         setDemoState('EXPERTS');
-        setTimeout(() => setDemoState('FINAL'), 1500);
+        setTimeout(() => {
+          setDemoState('FINAL');
+          setTimeout(() => setDemoState('IDLE'), 2000);
+        }, 1500);
       }, maxDelay + 1000);
     } else {
       setDemoState('EXPERTS');
-      setTimeout(() => setDemoState('FINAL'), 1500);
+      setTimeout(() => {
+        setDemoState('FINAL');
+        setTimeout(() => setDemoState('IDLE'), 2000);
+      }, 1500);
     }
   };
+
+  const isWorking = demoState === 'FETCHING' || demoState === 'ORCHESTRATING';
+  const hasResults = appState?.experts;
 
   return (
     <>
       <ParticlesBackground />
-      <div className="min-h-screen bg-transparent text-slate-200 p-4 md:p-8 font-sans relative z-10">
+      <div className="min-h-screen bg-transparent text-slate-200 p-4 md:p-6 font-sans relative z-10">
         <Toaster position="bottom-right" />
         
-        <header className="max-w-7xl mx-auto mb-6 border-b border-slate-700/50 pb-4">
+        <header className="max-w-[1600px] mx-auto mb-4 border-b border-slate-700/50 pb-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.5)]">
               <Activity className="text-white w-6 h-6" />
@@ -188,11 +197,13 @@ function App() {
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto">
+        <main className="max-w-[1600px] mx-auto">
           <PipelineVisualizer demoState={demoState} steps={appState?.orchestration_steps || []} />
           
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5 flex flex-col gap-6">
+          {/* TOP ROW: Chat (left) + Map (right) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
+            {/* Chat Panel - Left */}
+            <div className="lg:col-span-5">
               <GemmaOrchestrator 
                 onSendMessage={handleSendMessage} 
                 demoState={demoState}
@@ -201,126 +212,124 @@ function App() {
                 confidence={currentConfidence}
                 chatHistory={chatHistory}
               />
-              
-              <div className="bg-slate-800/80 backdrop-blur-md rounded-xl border border-slate-700 shadow-xl p-4 flex-1">
-                <h3 className="font-semibold mb-3 flex items-center gap-2 text-slate-200">
-                  <Activity className="w-5 h-5 text-emerald-400" />
-                  Live Network Cascade Simulation
-                </h3>
-                <div className="h-full min-h-[300px]">
-                  <MapWidget 
-                    simulationData={appState?.context?.simulation?.simulation_results}
-                    mapCascade={appState?.map_cascade}
-                    currentMapStep={currentMapStep}
-                  />
-                </div>
+            </div>
+
+            {/* Map Panel - Right */}
+            <div className="lg:col-span-7">
+              <div className="bg-slate-800/80 backdrop-blur-md rounded-xl border border-slate-700 shadow-xl overflow-hidden h-full min-h-[500px]">
+                <MapWidget 
+                  simulationData={appState?.context?.simulate_route_closure || appState?.context?.simulate_network_cascade}
+                  mapCascade={appState?.map_cascade}
+                  currentMapStep={currentMapStep}
+                  evidence={appState?.evidence}
+                />
               </div>
             </div>
-
-            <div className="lg:col-span-7 space-y-6">
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-3">
-                  <AlertTriangle className="w-5 h-5" />
-                  <p>{error}. Please ensure the backend is running.</p>
-                </div>
-              )}
-
-              {demoState === 'IDLE' && !error && chatHistory.length === 0 && (
-                <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-700/50 rounded-xl p-12 text-center bg-slate-900/30 backdrop-blur-sm">
-                  <Activity className="w-12 h-12 mb-4 opacity-50" />
-                  <h2 className="text-xl font-medium mb-2 text-slate-300">Awaiting Input</h2>
-                  <p className="max-w-md text-slate-400">Enter a request in the conversation panel to initiate tool gathering, expert deliberation, and AI resolution.</p>
-                </div>
-              )}
-
-              {['ORCHESTRATING', 'MAP_CASCADE'].includes(demoState) && (
-                 <div className="h-full flex flex-col items-center justify-center text-slate-400 border border-slate-800/50 rounded-xl p-12 text-center bg-slate-900/30 backdrop-blur-sm">
-                   <Activity className="w-12 h-12 mb-4 opacity-50 animate-pulse text-emerald-500" />
-                   <h2 className="text-xl font-medium mb-2 text-emerald-400">Synthesizing Context...</h2>
-                   <p className="max-w-md">The orchestrator is actively evaluating constraints and testing simulation models.</p>
-                 </div>
-              )}
-
-              {['EXPERTS', 'FINAL'].includes(demoState) && appState && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <EvidencePanel evidence={appState.evidence} />
-                  {appState.memory && appState.memory.length > 0 && (
-                    <MemoryPanel memory={appState.memory} />
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <ExpertPanel 
-                      title="Traffic Operations"
-                      icon={Activity}
-                      colorClass="bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-                      {...appState.experts.traffic}
-                    />
-                    <ExpertPanel 
-                      title="Infrastructure Planning"
-                      icon={HardHat}
-                      colorClass="bg-orange-500/10 text-orange-400 border-orange-500/20"
-                      {...appState.experts.infrastructure}
-                    />
-                  </div>
-
-                  {/* Final Decision Panel */}
-                  <AnimatePresence>
-                    {demoState === 'FINAL' && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-gradient-to-br from-slate-800 to-slate-800/80 rounded-xl border border-emerald-500/30 shadow-2xl overflow-hidden relative backdrop-blur-md"
-                      >
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-cyan-400" />
-                        <div className="p-5 border-b border-slate-700 flex items-center gap-2">
-                          <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-                          <h2 className="text-lg font-bold text-slate-100">Final Decision & Resolution</h2>
-                        </div>
-                        
-                        <div className="p-6 space-y-6">
-                          <div>
-                            <h3 className="text-sm font-semibold text-emerald-400 uppercase tracking-wide mb-2">Action Plan</h3>
-                            <p className="text-slate-200 text-lg leading-relaxed">{appState.final?.decision}</p>
-                          </div>
-                          
-                          <div>
-                            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">Explanation</h3>
-                            <p className="text-slate-300">{appState.final?.explanation}</p>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-700">
-                            <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700/50">
-                              <h4 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2 mb-2">
-                                <MessageSquare className="w-4 h-4" /> Generated Notice (Nepali)
-                              </h4>
-                              <p className="text-sm text-slate-300 font-medium">{appState.final?.public_notice_nepali}</p>
-                            </div>
-                            <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700/50">
-                              <h4 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2 mb-2">
-                                <Activity className="w-4 h-4" /> SMS Alert
-                              </h4>
-                              <p className="text-sm text-slate-300 font-mono">{appState.final?.sms}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              )}
-            </div>
           </div>
-        </main>
 
-        {/* Clarification Modal Overlay */}
-        <AnimatePresence>
-          {demoState === 'CLARIFICATION' && appState?.clarification && (
-            <ClarificationModal 
-              clarification={appState.clarification}
-              onResolve={handleClarificationResolve}
-            />
+          {/* BOTTOM ROW: Results (full width) */}
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-3 mb-4">
+              <AlertTriangle className="w-5 h-5" />
+              <p>{error}. Please ensure the backend is running.</p>
+            </div>
           )}
-        </AnimatePresence>
+
+          {['ORCHESTRATING', 'MAP_CASCADE'].includes(demoState) && !hasResults && (
+            <div className="flex flex-col items-center justify-center text-slate-400 border border-slate-800/50 rounded-xl p-8 text-center bg-slate-900/30 backdrop-blur-sm mb-4">
+              <Activity className="w-10 h-10 mb-3 opacity-50 animate-pulse text-emerald-500" />
+              <h2 className="text-lg font-medium mb-1 text-emerald-400">Synthesizing Context...</h2>
+              <p className="max-w-md text-sm">The orchestrator is actively evaluating constraints and testing simulation models.</p>
+            </div>
+          )}
+
+          {((['EXPERTS', 'FINAL'].includes(demoState)) || (demoState === 'IDLE' && hasResults)) && appState && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+              <EvidencePanel evidence={appState.evidence} />
+              {appState.memory && appState.memory.length > 0 && (
+                <MemoryPanel memory={appState.memory} />
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+                <ExpertPanel 
+                  title="Traffic Operations"
+                  icon={Activity}
+                  colorClass="bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                  {...appState.experts.traffic}
+                />
+                <ExpertPanel 
+                  title="Infrastructure"
+                  icon={HardHat}
+                  colorClass="bg-orange-500/10 text-orange-400 border-orange-500/20"
+                  {...appState.experts.infrastructure}
+                />
+                {appState.experts.emergency && (
+                  <ExpertPanel 
+                    title="Emergency Response"
+                    icon={Siren}
+                    colorClass="bg-red-500/10 text-red-400 border-red-500/20"
+                    {...appState.experts.emergency}
+                  />
+                )}
+                {appState.experts.planning && (
+                  <ExpertPanel 
+                    title="Strategic Planning"
+                    icon={BarChart3}
+                    colorClass="bg-violet-500/10 text-violet-400 border-violet-500/20"
+                    {...appState.experts.planning}
+                  />
+                )}
+              </div>
+
+              {/* Scenario Comparison */}
+              {appState.scenarios && <ScenarioPanel scenarios={appState.scenarios} />}
+
+              {/* Final Decision Panel */}
+              <AnimatePresence>
+                {(demoState === 'FINAL' || (demoState === 'IDLE' && appState?.final)) && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-gradient-to-br from-slate-800 to-slate-800/80 rounded-xl border border-emerald-500/30 shadow-2xl overflow-hidden relative backdrop-blur-md mb-4"
+                  >
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-cyan-400" />
+                    <div className="p-5 border-b border-slate-700 flex items-center gap-2">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                      <h2 className="text-lg font-bold text-slate-100">Final Decision & Resolution</h2>
+                    </div>
+                    
+                    <div className="p-6 space-y-6">
+                      <div>
+                        <h3 className="text-sm font-semibold text-emerald-400 uppercase tracking-wide mb-2">Action Plan</h3>
+                        <p className="text-slate-200 text-lg leading-relaxed">{appState.final?.decision}</p>
+                      </div>
+                      
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">Explanation</h3>
+                        <p className="text-slate-300">{appState.final?.explanation}</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-700">
+                        <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700/50">
+                          <h4 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2 mb-2">
+                            <MessageSquare className="w-4 h-4" /> Generated Notice (Nepali)
+                          </h4>
+                          <p className="text-sm text-slate-300 font-medium">{appState.final?.public_notice_nepali}</p>
+                        </div>
+                        <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700/50">
+                          <h4 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2 mb-2">
+                            <Activity className="w-4 h-4" /> SMS Alert
+                          </h4>
+                          <p className="text-sm text-slate-300 font-mono">{appState.final?.sms}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </main>
       </div>
     </>
   );

@@ -1,0 +1,85 @@
+[
+  {
+    "name": "Sunkoshi Bridge",
+    "type": "Steel Truss",
+    "location": "Sunkoshi River, Sindhupalchok",
+    "year_built": 1998,
+    "load_limit_tonnes": 40,
+    "condition": "Fair",
+    "last_inspection": "2026-03-21",
+    "maintenance_due": true,
+    "notes": "Corrosion observed on lower truss members. Deck resurfacing needed.",
+    "inspections": [
+      {"date": "2026-03-21", "result": "Fair", "inspector": "DoR Sindhupalchok"},
+      {"date": "2025-09-10", "result": "Good", "inspector": "DoR Sindhupalchok"},
+      {"date": "2025-03-15", "result": "Good", "inspector": "DoR Central"}
+    ],
+    "repairs": [
+      {"date": "2024-11-01", "work": "Bearing replacement", "cost_npr": 450000},
+      {"date": "2023-06-15", "work": "Deck patching", "cost_npr": 180000}
+    ],
+    "overload_incidents": [
+      {"date": "2026-01-12", "vehicle": "Cement truck", "weight_tonnes": 48, "action": "Fined and turned back"}
+    ]
+  },
+  {
+    "name": "Temporary Bailey Bridge",
+    "type": "Bailey Bridge",
+    "location": "Jagati, Bhaktapur",
+    "year_built": 2024,
+    "load_limit_tonnes": 20,
+    "condition": "Good",
+    "last_inspection": "2026-05-10",
+    "maintenance_due": false,
+    "notes": "Temporary installation. Single lane. Speed limit 10 km/h.",
+    "inspections": [
+      {"date": "2026-05-10", "result": "Good", "inspector": "Nepal Army Engineers"},
+      {"date": "2025-12-01", "result": "Good", "inspector": "Nepal Army Engineers"}
+    ],
+    "repairs": [],
+    "overload_incidents": []
+  },
+  {
+    "name": "Bhaktapur Bridge",
+    "type": "RCC Girder",
+    "location": "Bhaktapur Municipality",
+    "year_built": 2015,
+    "load_limit_tonnes": 60,
+    "condition": "Good",
+    "last_inspection": "2026-04-18",
+    "maintenance_due": false,
+    "notes": "Dual carriageway. Recently upgraded drainage system.",
+    "inspections": [
+      {"date": "2026-04-18", "result": "Good", "inspector": "DoR Bhaktapur"},
+      {"date": "2025-10-22", "result": "Good", "inspector": "DoR Bhaktapur"}
+    ],
+    "repairs": [
+      {"date": "2025-07-20", "work": "Drainage upgrade", "cost_npr": 1200000}
+    ],
+    "overload_incidents": []
+  },
+  {
+    "name": "Pulbazar Bridge",
+    "type": "Steel Plate Girder",
+    "location": "Pulbazar, Banepa",
+    "year_built": 2008,
+    "load_limit_tonnes": 35,
+    "condition": "Fair",
+    "last_inspection": "2026-02-14",
+    "maintenance_due": true,
+    "notes": "Hairline cracks in pier cap. Vibration monitoring recommended.",
+    "inspections": [
+      {"date": "2026-02-14", "result": "Fair", "inspector": "DoR Kavrepalanchok"},
+      {"date": "2025-08-05", "result": "Fair", "inspector": "DoR Kavrepalanchok"},
+      {"date": "2025-02-20", "result": "Good", "inspector": "DoR Central"}
+    ],
+    "repairs": [
+      {"date": "2025-04-10", "work": "Pier cap sealing", "cost_npr": 320000},
+      {"date": "2024-09-01", "work": "Guard rail replacement", "cost_npr": 95000}
+    ],
+    "overload_incidents": [
+      {"date": "2025-11-30", "vehicle": "Sand truck", "weight_tonnes": 42, "action": "Bridge temporarily closed for inspection"},
+      {"date": "2025-07-18", "vehicle": "Construction crane", "weight_tonnes": 38, "action": "Escorted crossing at 5 km/h"}
+    ]
+  }
+]

@@ -1,9 +1,10 @@
-import React from 'react';
-import { MapContainer, TileLayer, Polyline, Popup } from 'react-leaflet';
+import React, { useEffect, useState, useMemo } from 'react';
+import { MapContainer, TileLayer, Polyline, Popup, Circle, Marker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { AlertTriangle, CloudRain, Car, Activity } from 'lucide-react';
 
-// Fix leaflet marker icon issue in react
+// Fix leaflet marker icon issue
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -11,58 +12,181 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1 }) => {
-  // Bhaktapur - Banepa roughly around 27.64, 85.47
-  const position = [27.65, 85.47];
+const createIcon = (color, emoji) => L.divIcon({
+  html: `<div style="background:${color};width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid rgba(255,255,255,0.3);box-shadow:0 0 10px ${color}80;">${emoji}</div>`,
+  className: '',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+});
+
+const roads = [
+  { name: "Road A (Suryabinayak)", positions: [[27.67, 85.42], [27.66, 85.44]] },
+  { name: "Road B (Jagati)", positions: [[27.66, 85.44], [27.655, 85.455]] },
+  { name: "Road C (Sanga)", positions: [[27.655, 85.455], [27.645, 85.475]] },
+  { name: "Road D (Banepa)", positions: [[27.645, 85.475], [27.635, 85.50]] },
+  { name: "Alt 1", positions: [[27.67, 85.42], [27.665, 85.46]] },
+  { name: "Alt 2", positions: [[27.665, 85.46], [27.635, 85.50]] },
+];
+
+const landslideZones = [
+  { center: [27.655, 85.455], radius: 600, risk: 'high', label: 'Jagati Slope' },
+  { center: [27.645, 85.48], radius: 400, risk: 'medium', label: 'Sanga Hillside' },
+  { center: [27.66, 85.43], radius: 350, risk: 'low', label: 'Suryabinayak Ridge' },
+];
+
+const floodZones = [
+  { center: [27.65, 85.46], radius: 500, label: 'River Crossing' },
+  { center: [27.64, 85.49], radius: 350, label: 'Low Basin Area' },
+];
+
+// Animated vehicles component
+const AnimatedVehicles = ({ activeRoads }) => {
+  const [positions, setPositions] = useState([]);
   
-  // Mock road segments for visualization
-  const roads = [
-    { name: "Road A (Suryabinayak)", positions: [[27.67, 85.42], [27.66, 85.44]] },
-    { name: "Road B (Jagati)", positions: [[27.66, 85.44], [27.65, 85.46]] },
-    { name: "Road C (Sanga)", positions: [[27.65, 85.46], [27.64, 85.49]] },
-    { name: "Road D (Banepa)", positions: [[27.64, 85.49], [27.63, 85.52]] },
-  ];
+  useEffect(() => {
+    const vehicles = [];
+    roads.forEach(road => {
+      const isActive = activeRoads.includes(road.name);
+      const count = isActive ? 3 : 1;
+      for (let i = 0; i < count; i++) {
+        const t = Math.random();
+        const lat = road.positions[0][0] + (road.positions[1][0] - road.positions[0][0]) * t;
+        const lng = road.positions[0][1] + (road.positions[1][1] - road.positions[0][1]) * t;
+        vehicles.push({ lat, lng, road: road.name, speed: isActive ? 'slow' : 'fast' });
+      }
+    });
+    setPositions(vehicles);
+    
+    const interval = setInterval(() => {
+      setPositions(prev => prev.map(v => {
+        const road = roads.find(r => r.name === v.road);
+        if (!road) return v;
+        const dir = Math.random() > 0.5 ? 1 : -1;
+        const step = v.speed === 'slow' ? 0.0003 : 0.001;
+        let newLat = v.lat + (road.positions[1][0] - road.positions[0][0]) * step * dir;
+        let newLng = v.lng + (road.positions[1][1] - road.positions[0][1]) * step * dir;
+        const minLat = Math.min(road.positions[0][0], road.positions[1][0]);
+        const maxLat = Math.max(road.positions[0][0], road.positions[1][0]);
+        const minLng = Math.min(road.positions[0][1], road.positions[1][1]);
+        const maxLng = Math.max(road.positions[0][1], road.positions[1][1]);
+        newLat = Math.max(minLat, Math.min(maxLat, newLat));
+        newLng = Math.max(minLng, Math.min(maxLng, newLng));
+        return { ...v, lat: newLat, lng: newLng };
+      }));
+    }, 800);
+    
+    return () => clearInterval(interval);
+  }, [activeRoads]);
+  
+  return positions.map((v, i) => (
+    <Marker 
+      key={`vehicle-${i}`} 
+      position={[v.lat, v.lng]} 
+      icon={createIcon(v.speed === 'slow' ? '#ef4444' : '#22c55e', '🚗')}
+    />
+  ));
+};
+
+const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }) => {
+  const position = [27.65, 85.47];
+  const [activeLayers, setActiveLayers] = useState({
+    traffic: true, weather: true, landslide: true, vehicles: true
+  });
+
+  // Build congestion lookup from simulation data (handles both old and new formats)
+  const congestionMap = useMemo(() => {
+    const map = {};
+    if (!simulationData) return map;
+    
+    // New format: affected_roads array from simulate_route_closure
+    if (simulationData.affected_roads) {
+      simulationData.affected_roads.forEach(r => {
+        map[r.road] = r.congestion; // "Critical", "Heavy", "Moderate"
+      });
+    }
+    // Old format: simulation_results keyed by road name
+    if (simulationData.simulation_results) {
+      Object.entries(simulationData.simulation_results).forEach(([road, val]) => {
+        map[road] = val;
+      });
+    }
+    return map;
+  }, [simulationData]);
+
+  const hasWeatherRisk = evidence?.weather?.risk === 'High' || evidence?.weather?.risk === 'Critical';
+  const rainMm = evidence?.weather?.rain ? parseFloat(evidence.weather.rain) : 0;
 
   const getColor = (roadName) => {
-    // If in cascade demo mode
-    if (mapCascade && currentMapStep >= 0) {
+    // Cascade animation mode
+    if (mapCascade && mapCascade.length > 0 && currentMapStep >= 0) {
       const stepIdx = mapCascade.findIndex(step => step.road === roadName);
       if (stepIdx !== -1 && stepIdx <= currentMapStep) {
-        const colorName = mapCascade[stepIdx].color;
-        if (colorName === 'red') return '#ef4444';
-        if (colorName === 'orange') return '#f97316';
-        if (colorName === 'yellow') return '#eab308';
-        if (colorName === 'green') return '#22c55e';
+        const c = mapCascade[stepIdx].color;
+        if (c === 'red') return '#ef4444';
+        if (c === 'orange') return '#f97316';
+        if (c === 'yellow') return '#eab308';
+        return '#22c55e';
       }
-      return '#22c55e'; // Default before cascade reaches it
+      return '#22c55e';
     }
-
-    // Default simulation data mode
-    if (!simulationData) return '#22c55e';
-    const congestion = simulationData[roadName];
-    if (!congestion) return '#22c55e';
-    const percent = parseInt(congestion.replace('%','').replace('+',''));
-    if (percent > 40) return '#ef4444'; // red
-    if (percent > 20) return '#f97316'; // orange
-    return '#eab308'; // yellow
+    
+    // Congestion data mode
+    const cong = congestionMap[roadName];
+    if (!cong) return '#22c55e';
+    
+    // Handle string congestion levels from new format
+    if (typeof cong === 'string') {
+      const cl = cong.toLowerCase();
+      if (cl === 'critical') return '#ef4444';
+      if (cl === 'heavy') return '#f97316';
+      if (cl === 'moderate') return '#eab308';
+      // Handle old percentage format
+      const pct = parseInt(cong.replace('%','').replace('+',''));
+      if (!isNaN(pct)) {
+        if (pct > 40) return '#ef4444';
+        if (pct > 20) return '#f97316';
+        return '#eab308';
+      }
+    }
+    
+    return '#22c55e';
   };
 
   const getTrafficClass = (roadName) => {
-    if (mapCascade && currentMapStep >= 0) {
+    if (mapCascade && mapCascade.length > 0 && currentMapStep >= 0) {
       const stepIdx = mapCascade.findIndex(step => step.road === roadName);
-      if (stepIdx !== -1 && stepIdx <= currentMapStep) {
-        return 'cascade-wave';
-      }
+      if (stepIdx !== -1 && stepIdx <= currentMapStep) return 'cascade-wave';
     }
-
-    let color = getColor(roadName);
+    const color = getColor(roadName);
     if (color === '#22c55e') return 'animated-traffic-fast';
     if (color === '#eab308') return 'animated-traffic-medium';
-    return 'animated-traffic-slow'; // Red/Orange
+    return 'animated-traffic-slow';
   };
 
+  const activeRoads = useMemo(() => {
+    if (mapCascade && mapCascade.length > 0) {
+      return mapCascade.filter((_, i) => i <= currentMapStep).map(s => s.road);
+    }
+    return Object.keys(congestionMap);
+  }, [mapCascade, currentMapStep, congestionMap]);
+
+  const toggleLayer = (layer) => {
+    setActiveLayers(prev => ({ ...prev, [layer]: !prev[layer] }));
+  };
+
+  const getLandslideColor = (risk) => {
+    if (!hasWeatherRisk) return 'rgba(100,100,100,0.1)';
+    if (risk === 'high') return 'rgba(239,68,68,0.25)';
+    if (risk === 'medium') return 'rgba(249,115,22,0.2)';
+    return 'rgba(234,179,8,0.15)';
+  };
+
+  // Get closed road name for display
+  const closedRoad = simulationData?.closed_road || simulationData?.closed_road_simulated || '';
+  const increaseStr = simulationData?.increase_pct || '';
+
   return (
-    <div className="h-full w-full min-h-[300px] rounded-xl overflow-hidden shadow-lg border border-slate-700 bg-slate-800 relative z-0">
+    <div className="h-full w-full rounded-xl overflow-hidden shadow-lg border border-slate-700 bg-slate-800 relative z-0 flex flex-col">
       <style>{`
         .animated-traffic-fast {
           stroke-dasharray: 8, 12;
@@ -89,26 +213,163 @@ const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1 }) => {
           to { stroke-dashoffset: 0; }
         }
       `}</style>
-      <div className="absolute inset-0 pointer-events-none border-[4px] border-slate-700/50 rounded-xl z-[400]" />
-      <MapContainer center={position} zoom={13} scrollWheelZoom={false} style={{ height: '100%', width: '100%', zIndex: 10 }}>
-        <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          className="map-tiles"
-        />
-        {roads.map((road, idx) => (
-          <Polyline 
-            key={idx} 
-            positions={road.positions} 
-            color={getColor(road.name)} 
-            weight={6}
-            opacity={0.9}
-            className={getTrafficClass(road.name)}
+      
+      {/* Layer Controls */}
+      <div className="absolute top-3 right-3 z-[500] flex flex-col gap-1.5">
+        {[
+          { key: 'traffic', icon: Activity, label: 'Traffic', color: '#34d399' },
+          { key: 'weather', icon: CloudRain, label: 'Flood', color: '#22d3ee' },
+          { key: 'landslide', icon: AlertTriangle, label: 'Landslide', color: '#fb923c' },
+          { key: 'vehicles', icon: Car, label: 'Vehicles', color: '#a78bfa' },
+        ].map(layer => (
+          <button
+            key={layer.key}
+            onClick={() => toggleLayer(layer.key)}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all border"
+            style={{
+              backgroundColor: activeLayers[layer.key] ? `${layer.color}20` : 'rgba(30,41,59,0.8)',
+              color: activeLayers[layer.key] ? layer.color : '#64748b',
+              borderColor: activeLayers[layer.key] ? `${layer.color}60` : '#334155',
+            }}
           >
-            <Popup>{road.name}: {simulationData ? simulationData[road.name] || '0%' : 'No congestion'}</Popup>
-          </Polyline>
+            <layer.icon className="w-3 h-3" />
+            {layer.label}
+          </button>
         ))}
-      </MapContainer>
+      </div>
+
+      {/* Status Bar */}
+      <div className="absolute bottom-3 left-3 right-3 z-[500]">
+        <div className="bg-slate-900/90 backdrop-blur-sm rounded-lg border border-slate-700/80 p-2.5 flex items-center gap-4 text-[10px]">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]" />
+            <span className="text-slate-400 font-medium">Normal</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 shadow-[0_0_6px_rgba(234,179,8,0.6)]" />
+            <span className="text-slate-400 font-medium">Moderate</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.6)]" />
+            <span className="text-slate-400 font-medium">Heavy</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]" />
+            <span className="text-slate-400 font-medium">Critical</span>
+          </div>
+          {closedRoad && (
+            <div className="ml-auto flex items-center gap-1 text-red-400 font-bold truncate max-w-[40%]">
+              <AlertTriangle className="w-3 h-3 shrink-0" />
+              <span className="truncate">{closedRoad}</span>
+              {increaseStr && <span className="text-amber-400 ml-1">{increaseStr}</span>}
+            </div>
+          )}
+          {!closedRoad && rainMm > 0 && (
+            <div className="ml-auto flex items-center gap-1 text-cyan-400 font-bold">
+              <CloudRain className="w-3 h-3" />
+              {rainMm}mm
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 relative">
+        <MapContainer center={position} zoom={13} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 10 }}>
+          {/* Satellite Imagery */}
+          <TileLayer
+            attribution='Tiles &copy; Esri'
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          />
+          <TileLayer
+            attribution='Labels &copy; Esri'
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+            opacity={0.7}
+          />
+
+          {/* Road outlines (depth effect) */}
+          {activeLayers.traffic && roads.map((road, idx) => (
+            <Polyline 
+              key={`outline-${idx}`}
+              positions={road.positions} 
+              color="rgba(0,0,0,0.5)"
+              weight={8}
+              opacity={0.4}
+            />
+          ))}
+
+          {/* Traffic Roads */}
+          {activeLayers.traffic && roads.map((road, idx) => (
+            <Polyline 
+              key={`road-${idx}`}
+              positions={road.positions} 
+              color={getColor(road.name)} 
+              weight={5}
+              opacity={0.9}
+              className={getTrafficClass(road.name)}
+            >
+              <Popup>
+                <div style={{color: '#1e293b', fontWeight: 600}}>{road.name}</div>
+                <div style={{fontSize: '11px', color: '#64748b'}}>
+                  {congestionMap[road.name] || 'Normal flow'}
+                </div>
+              </Popup>
+            </Polyline>
+          ))}
+
+          {/* Landslide Risk Zones */}
+          {activeLayers.landslide && landslideZones.map((zone, idx) => (
+            <React.Fragment key={`ls-${idx}`}>
+              <Circle
+                center={zone.center}
+                radius={zone.radius}
+                pathOptions={{
+                  fillColor: getLandslideColor(zone.risk),
+                  fillOpacity: 0.5,
+                  color: zone.risk === 'high' ? '#ef4444' : zone.risk === 'medium' ? '#f97316' : '#eab308',
+                  weight: 1.5,
+                  dashArray: '5, 5',
+                }}
+              >
+                <Popup>
+                  <div style={{fontWeight: 600, color: '#1e293b'}}>⛰️ {zone.label}</div>
+                  <div style={{fontSize: '11px', color: zone.risk === 'high' ? '#dc2626' : '#ea580c'}}>
+                    Landslide Risk: {zone.risk.toUpperCase()}
+                  </div>
+                </Popup>
+              </Circle>
+              {zone.risk === 'high' && hasWeatherRisk && (
+                <Marker position={zone.center} icon={createIcon('#ef4444', '⚠️')} />
+              )}
+            </React.Fragment>
+          ))}
+
+          {/* Flood Risk Zones */}
+          {activeLayers.weather && floodZones.map((zone, idx) => (
+            <Circle
+              key={`flood-${idx}`}
+              center={zone.center}
+              radius={zone.radius}
+              pathOptions={{
+                fillColor: rainMm > 50 ? 'rgba(6,182,212,0.3)' : 'rgba(6,182,212,0.1)',
+                fillOpacity: rainMm > 50 ? 0.5 : 0.2,
+                color: '#06b6d4',
+                weight: 1,
+                dashArray: '3, 6',
+              }}
+            >
+              <Popup>
+                <div style={{fontWeight: 600, color: '#1e293b'}}>🌊 {zone.label}</div>
+                <div style={{fontSize: '11px', color: '#0891b2'}}>
+                  Flood Risk: {rainMm > 50 ? 'HIGH' : rainMm > 20 ? 'MODERATE' : 'LOW'}
+                </div>
+              </Popup>
+            </Circle>
+          ))}
+
+          {/* Live Vehicle Markers */}
+          {activeLayers.vehicles && <AnimatedVehicles activeRoads={activeRoads} />}
+        </MapContainer>
+      </div>
     </div>
   );
 };

@@ -1,14 +1,104 @@
 [
   {
+    "id": "INC-2026-001",
     "event": "Lane Closure",
-    "location": "Bhaktapur-Banepa",
+    "location": "Bhaktapur-Banepa Highway",
+    "road": "Road B (Jagati)",
     "date": "2026-06-10",
-    "result": "Heavy congestion observed during peak hours due to lane closure. Recommend scheduling closure during night time."
+    "duration_hours": 8,
+    "result": "Heavy congestion observed during peak hours due to lane closure. Recommend scheduling closure during night time.",
+    "traffic_increase_pct": 35,
+    "ambulance_delay_min": 12,
+    "economic_loss_npr": 850000,
+    "post_incident_report": {
+      "lessons_learned": "Daytime lane closures on this corridor cause cascading delays to Sanga and Alt routes. Night-time (22:00-05:00) closures had minimal impact in a follow-up test.",
+      "what_failed": "Traffic police were deployed 30 minutes late. Public notice was not issued in time.",
+      "what_worked": "Alternative route signage at Suryabinayak junction was effective. Radio announcements reached ~60% of commuters."
+    }
   },
   {
+    "id": "INC-2025-003",
     "event": "Bridge Repair",
     "location": "Sunkoshi Bridge",
+    "road": "Sunkoshi Bridge",
     "date": "2025-08-15",
-    "result": "Complete closure resulted in 4-hour detour delays. Bailey bridge deployment is strictly required for future repairs of this scale."
+    "duration_hours": 72,
+    "result": "Complete closure resulted in 4-hour detour delays. Bailey bridge deployment is strictly required for future repairs of this scale.",
+    "traffic_increase_pct": 120,
+    "ambulance_delay_min": 45,
+    "economic_loss_npr": 12500000,
+    "post_incident_report": {
+      "lessons_learned": "Full bridge closure without Bailey bridge alternative is catastrophic for the corridor. Pre-deploy Bailey bridge 48 hours before planned closure.",
+      "what_failed": "No alternative crossing was prepared. Emergency vehicles had to use the Arniko Highway detour adding 4+ hours.",
+      "what_worked": "Nepal Army engineers deployed Bailey bridge on Day 2. After deployment, delays dropped to 45 minutes."
+    }
+  },
+  {
+    "id": "INC-2025-007",
+    "event": "Landslide Road Block",
+    "location": "Sanga Hill Section",
+    "road": "Road C (Sanga)",
+    "date": "2025-07-22",
+    "duration_hours": 18,
+    "result": "Complete road blockage after 140mm rainfall in 6 hours. Earth movers took 14 hours to clear.",
+    "traffic_increase_pct": 200,
+    "ambulance_delay_min": 90,
+    "economic_loss_npr": 4200000,
+    "post_incident_report": {
+      "lessons_learned": "Sanga Hill section is the highest-risk landslide zone. Rainfall above 100mm/day should trigger preventive closure and pre-positioned earth movers.",
+      "what_failed": "No early warning. Vehicles were trapped for 6 hours. One medical emergency required helicopter evacuation.",
+      "what_worked": "Post-event, Nepal Police checkpoint at Jagati prevented additional vehicles from entering the blocked zone."
+    }
+  },
+  {
+    "id": "INC-2026-004",
+    "event": "Heavy Vehicle Overload",
+    "location": "Pulbazar Bridge",
+    "road": "Pulbazar Bridge",
+    "date": "2026-01-12",
+    "duration_hours": 4,
+    "result": "48-tonne cement truck exceeded 35-tonne limit. Bridge temporarily closed for emergency inspection. Hairline cracks found in pier cap.",
+    "traffic_increase_pct": 55,
+    "ambulance_delay_min": 18,
+    "economic_loss_npr": 1800000,
+    "post_incident_report": {
+      "lessons_learned": "Weighbridge at Banepa entry must be operational 24/7. Current night-time gap allows overloaded trucks through.",
+      "what_failed": "Weighbridge was unmanned between 22:00-06:00. Bridge inspection delayed by 2 hours due to unavailable engineer.",
+      "what_worked": "Quick diversion to Alt Route 1 limited delays. SMS alert system reached 850 subscribed drivers within 5 minutes."
+    }
+  },
+  {
+    "id": "INC-2025-011",
+    "event": "Monsoon Flooding",
+    "location": "Jagati Low Basin",
+    "road": "Road B (Jagati)",
+    "date": "2025-09-03",
+    "duration_hours": 12,
+    "result": "River overflow flooded 200m of road. Water depth reached 0.8m. All traffic halted.",
+    "traffic_increase_pct": 180,
+    "ambulance_delay_min": 60,
+    "economic_loss_npr": 3500000,
+    "post_incident_report": {
+      "lessons_learned": "When Sunkoshi river level exceeds 'Warning' threshold, close Jagati low section preemptively. Build raised causeway.",
+      "what_failed": "No river level monitoring integration. Road was still open when water started rising. 12 vehicles stranded.",
+      "what_worked": "Fire brigade pumps cleared water in 4 hours after rain stopped. Community volunteers assisted with traffic management."
+    }
+  },
+  {
+    "id": "INC-2026-008",
+    "event": "Night Closure for Resurfacing",
+    "location": "Suryabinayak-Jagati Section",
+    "road": "Road A (Suryabinayak)",
+    "date": "2026-05-20",
+    "duration_hours": 6,
+    "result": "Night closure (23:00-05:00) for road resurfacing. Minimal traffic impact. Only 3% increase in alt route travel time.",
+    "traffic_increase_pct": 3,
+    "ambulance_delay_min": 2,
+    "economic_loss_npr": 45000,
+    "post_incident_report": {
+      "lessons_learned": "Night closures between 23:00-05:00 are ideal for maintenance. Traffic volume drops to <5% of peak. Ambulance routes remain viable via Alt 1.",
+      "what_failed": "Nothing significant. Minor noise complaints from nearby residents.",
+      "what_worked": "Pre-notification via SMS 48 hours ahead. Police escort for emergency vehicles. Work completed 30 minutes ahead of schedule."
+    }
   }
 ]

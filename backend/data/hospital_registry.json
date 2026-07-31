@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Bhaktapur Hospital",
+    "type": "District Hospital",
+    "location": "Bhaktapur",
+    "coordinates": [27.671, 85.428],
+    "trauma_center": true,
+    "beds": 150,
+    "icu_beds": 12,
+    "ambulances": 3,
+    "distance_km": {"Suryabinayak": 3.2, "Jagati": 5.8, "Sanga": 9.1, "Banepa": 14.5},
+    "travel_time_min": {"Suryabinayak": 8, "Jagati": 14, "Sanga": 22, "Banepa": 32}
+  },
+  {
+    "name": "Dhulikhel Hospital",
+    "type": "Teaching Hospital",
+    "location": "Dhulikhel",
+    "coordinates": [27.622, 85.556],
+    "trauma_center": true,
+    "beds": 375,
+    "icu_beds": 25,
+    "ambulances": 5,
+    "distance_km": {"Suryabinayak": 18.0, "Jagati": 14.5, "Sanga": 10.2, "Banepa": 5.8},
+    "travel_time_min": {"Suryabinayak": 38, "Jagati": 30, "Sanga": 22, "Banepa": 14}
+  },
+  {
+    "name": "Scheer Memorial Hospital",
+    "type": "Community Hospital",
+    "location": "Banepa",
+    "coordinates": [27.633, 85.522],
+    "trauma_center": false,
+    "beds": 80,
+    "icu_beds": 6,
+    "ambulances": 2,
+    "distance_km": {"Suryabinayak": 15.5, "Jagati": 12.0, "Sanga": 7.5, "Banepa": 2.1},
+    "travel_time_min": {"Suryabinayak": 34, "Jagati": 26, "Sanga": 18, "Banepa": 6}
+  }
+]

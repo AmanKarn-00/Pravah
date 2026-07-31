@@ -38,7 +38,7 @@ const GemmaOrchestrator = ({ onSendMessage, demoState, steps = [], currentStep =
   const isWorking = demoState === 'FETCHING' || demoState === 'ORCHESTRATING';
 
   return (
-    <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-xl overflow-hidden flex flex-col h-full min-h-[400px]">
+    <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-xl overflow-hidden flex flex-col h-full min-h-[500px]">
       <div className="p-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center">
         <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${isWorking ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
@@ -73,14 +73,16 @@ const GemmaOrchestrator = ({ onSendMessage, demoState, steps = [], currentStep =
             ))}
 
             {/* Live Orchestration Steps as Gemma's internal monologue */}
-            {demoState !== 'IDLE' && steps.length > 0 && (
+            {steps.length > 0 && (
               <div className="flex justify-start">
                 <div className="max-w-[95%] p-3 rounded-lg bg-slate-700/40 border border-slate-600/50 text-slate-200 w-full">
                   <div className="flex items-center gap-2 mb-3 opacity-70">
                     <p className="text-sm font-medium">Gemma</p>
-                    <span className="text-xs italic flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin" /> orchestrating...
-                    </span>
+                    {isWorking && (
+                      <span className="text-xs italic flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> orchestrating...
+                      </span>
+                    )}
                   </div>
                   
                   <div className="space-y-2">

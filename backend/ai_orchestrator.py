@@ -26,15 +26,13 @@ def call_llm(prompt: str, system_instruction: str = None, response_schema: Any =
         kwargs["config"].response_schema = response_schema
         
     try:
-        # Hackathon Demo Polish: Add a strict 12-second timeout to prevent endless spinning
-        # If the API takes too long, we gracefully trigger the fallback so the demo continues smoothly.
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future = executor.submit(
                 client.models.generate_content,
                 contents=prompt,
                 **kwargs
             )
-            response = future.result(timeout=12)
+            response = future.result(timeout=30)  # Increased for 21 tools
         text = response.text.strip()
         
         print("\n====================")
@@ -43,25 +41,21 @@ def call_llm(prompt: str, system_instruction: str = None, response_schema: Any =
         elif response_schema == UNIFIED_RESOLUTION_SCHEMA:
             print("UNIFIED RESPONSE")
         else:
-            print("UNKNOWN RESPONSE")
-        print(repr(text))
+            print("LLM RESPONSE")
+        print(repr(text[:500]))
         print("====================\n")
         
-        # Try direct parse first in case it's clean
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
             
-        # Strip markdown fences
         text_clean = text.replace("```json", "").replace("```", "").strip()
-        
         try:
             return json.loads(text_clean)
         except json.JSONDecodeError:
             pass
             
-        # Fallback to Regex Extraction
         import re
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
@@ -70,43 +64,71 @@ def call_llm(prompt: str, system_instruction: str = None, response_schema: Any =
         raise ValueError("Could not extract JSON from response")
             
     except concurrent.futures.TimeoutError:
-        print(f"API Error in call_llm: Timeout after 12 seconds")
+        print(f"API Error in call_llm: Timeout after 30 seconds")
     except Exception as e:
         print(f"API Error in call_llm: {e}")
         try:
-            print(f"Failed to parse. Text was: {repr(response.text)}")
+            print(f"Failed to parse. Text was: {repr(response.text[:300])}")
         except:
             pass
         
-    # --- HACKATHON SAFE FALLBACKS FOR RATE LIMITS OR TIMEOUTS ---
+    # Fallbacks
     if response_schema == UNIFIED_RESOLUTION_SCHEMA:
         return {
             "traffic_recommendation": "Implement standard routing protocols (Fallback active).",
-            "traffic_reason": "Expert module unreachable due to high load. Proceeding with standard safety margins.",
-            "traffic_confidence": "65",
-            "infra_recommendation": "Maintain structural integrity.",
-            "infra_reason": "Default infrastructure checks applied.",
-            "infra_confidence": "70",
+            "traffic_reason": "Expert module unreachable. Proceeding with standard safety margins.",
+            "traffic_confidence": "50",
+            "infra_recommendation": "Maintain structural integrity checks.",
+            "infra_reason": "Default infrastructure assessment applied.",
+            "infra_confidence": "50",
+            "emergency_recommendation": "Keep emergency routes open.",
+            "emergency_reason": "Default emergency protocol.",
+            "emergency_confidence": "50",
+            "planning_recommendation": "Assess economic impact post-event.",
+            "planning_reason": "Standard planning fallback.",
             "final_decision": "Proceed with default safety measures.",
-            "final_explanation": "System fallback activated. Ensure standard operational procedures are followed.",
+            "final_explanation": "System fallback activated.",
             "public_notice_nepali": "सुरक्षा मापदण्ड लागू गरिएको छ। (Fallback)",
-            "sms": "PRAVAH: Standard safety active."
+            "sms": "PRAVAH: Standard safety active.",
+            "scenario_a_action": "Full closure with detour", "scenario_a_travel_impact": "+25%",
+            "scenario_a_safety_risk": "Low", "scenario_a_economic_cost": "High",
+            "scenario_b_action": "Partial closure (one lane)", "scenario_b_travel_impact": "+10%",
+            "scenario_b_safety_risk": "Medium", "scenario_b_economic_cost": "Medium",
+            "scenario_c_action": "Keep open with restrictions", "scenario_c_travel_impact": "+0%",
+            "scenario_c_safety_risk": "High", "scenario_c_economic_cost": "Low",
         }
     elif response_schema == EXTRACTION_SCHEMA:
-         return {"event": "Incident", "location": "Unknown", "road": "Unknown", "time": "Unknown", "duration": "Unknown"}
+         return {"event": "Incident", "road": "Unknown", "time": "Unknown", "duration": "Unknown"}
     return {}
 
+SYSTEM_INSTRUCTION = """You are PRAVAH, a multi-agent AI infrastructure decision orchestrator for Nepal's road network.
+
+You have access to 21 specialized tools across 6 domains:
+- 🚦 Traffic: get_live_traffic_status, predict_queue_length, simulate_route_closure, find_best_detour
+- 🌉 Infrastructure: get_bridge_health, predict_bridge_failure, get_bridge_history, calculate_remaining_capacity
+- 🌧️ Weather: get_weather_forecast, predict_landslide_probability, check_river_level
+- 🚑 Emergency: get_nearest_hospital, estimate_ambulance_delay, get_available_emergency_units
+- 🧠 Memory: search_similar_incidents, retrieve_post_incident_report
+- 📊 Planning: estimate_economic_loss, estimate_carbon_emissions
+- 🔮 Prediction: forecast_traffic, predict_recovery_time
+
+IMPORTANT RULES:
+1. Before calling analysis tools, check if critical details (road/bridge name, time, duration) are missing. If ANY are missing, call ask_clarification FIRST.
+2. Call tools from MULTIPLE domains to build comprehensive context. A good analysis uses at least 3-4 different tools.
+3. For road closures: always call simulate_route_closure, get_weather_forecast, search_similar_incidents, and estimate_ambulance_delay.
+4. For bridge issues: always call get_bridge_health, predict_bridge_failure, and estimate_ambulance_delay.
+5. Never invent data — always use tools to gather real information.
+6. You may call multiple tools in parallel in a single turn."""
+
 def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str, None, None]:
-    """Generates a stream of orchestration events culminating in the final decision payload."""
+    """Generates a stream of orchestration events."""
     
-    # Extract the very first user message to use as the base event context
     base_event = next((msg["content"] for msg in messages if msg["role"] == "user"), "")
-    # Combine all messages to give full context for extraction
     full_context = "\n".join(f"{msg['role'].capitalize()}: {msg['content']}" for msg in messages)
     
     yield 'data: ' + json.dumps({"type": "log", "message": f"Received conversation with {len(messages)} turns."}) + "\n\n"
     
-    # 1. Job 1 - Understand Input
+    # 1. Extract Entities
     yield 'data: ' + json.dumps({"type": "log", "message": "Extracting entities..."}) + "\n\n"
     
     start_time = time.time()
@@ -117,17 +139,15 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
     )
     dur = int((time.time() - start_time) * 1000)
     print("1 Extraction complete")
-    yield 'data: ' + json.dumps({"type": "step", "name": "Extract Entities", "status": "success", "duration": f"{dur} ms", "result": extracted}) + "\n\n"
+    yield 'data: ' + json.dumps({"type": "step_start", "name": "Extract Entities"}) + "\n\n"
+    yield 'data: ' + json.dumps({"type": "step_end", "name": "Extract Entities", "status": "success", "duration": f"{dur} ms", "result": extracted}) + "\n\n"
     
-    # 2. Native Function Calling
-    yield 'data: ' + json.dumps({"type": "log", "message": "Invoking Gemini Native Function Calling Loop..."}) + "\n\n"
+    # 2. Native Function Calling with all 21 tools
+    yield 'data: ' + json.dumps({"type": "log", "message": "Invoking multi-agent tool orchestration..."}) + "\n\n"
     
-    # Construct history for the Gemini API
-    # The last message is the "current" prompt we're sending, so we put all PRIOR messages in history
     gemini_history = []
     if len(messages) > 1:
         for msg in messages[:-1]:
-            # Gemini expects 'user' or 'model' roles. We map 'assistant' to 'model'.
             role = "model" if msg["role"] == "assistant" else "user"
             gemini_history.append(types.Content(
                 role=role,
@@ -135,9 +155,7 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
             ))
             
     print("2 Creating chat")
-    print("TOOLS CONFIGURATION:", pravah_tools)
     try:
-        # Create chat and store the object
         chat = client.chats.create(
             model="gemma-4-31b-it",
             config=types.GenerateContentConfig(
@@ -151,7 +169,7 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
                     )
                 ),
                 temperature=0.2,
-                system_instruction="You are an AI infrastructure decision orchestrator. Use the available tools to gather context for infrastructure decisions. IMPORTANT: Before calling any analysis tools, check if critical details (road/bridge name, time, duration) are missing or empty. If ANY critical detail is missing, you MUST call ask_clarification FIRST to get the missing information. Never assume or invent missing data."
+                system_instruction=SYSTEM_INSTRUCTION
             ),
             history=gemini_history,
         )
@@ -162,58 +180,40 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
     
     tool_results_dict = {}
     
-    # Build prompt that highlights missing fields
+    latest_msg = messages[-1]["content"] if messages else ""
     missing_fields = [k for k, v in extracted.items() if not v or v in ('Unknown', '')]
     missing_note = ""
     if missing_fields:
         missing_note = f"\nWARNING: The following critical fields are missing or empty: {', '.join(missing_fields)}. You MUST call ask_clarification to gather these before proceeding with analysis tools."
     
-    prompt = f"Analyze this event and gather necessary context using tools. New User Input: '{latest_msg}'.\nExtracted details so far: {json.dumps(extracted)}{missing_note}"
+    prompt = f"Analyze this event and gather comprehensive context using tools from multiple domains. New User Input: '{latest_msg}'.\nExtracted details so far: {json.dumps(extracted)}{missing_note}"
     
-    MAX_TURNS = 5
+    MAX_TURNS = 6
     for turn in range(MAX_TURNS):
         print(f"TURN {turn}")
-        print("4 Sending message")
         try:
             response = chat.send_message(prompt)
-            print("5 Message returned")
 
-            # Debug raw output
-            print("TEXT")
-            try:
-                print(repr(response.text))
-            except Exception:
-                print("Could not print text")
-
-            # Capture text response if any
             try:
                 response_text = response.text or ""
             except Exception:
                 response_text = ""
 
-            # Extract function calls from the response (new SDK pattern)
             func_calls = []
             try:
                 candidate = response.candidates[0]
-                print("CANDIDATE PARTS DEBUG")
                 for i, part in enumerate(candidate.content.parts):
-                    print(f"\n===== PART {i} =====")
-                    print(repr(part))
                     if hasattr(part, "function_call") and part.function_call:
                         func_calls.append(part.function_call)
-                print("EXTRACTED FUNCTION CALLS:", func_calls)
+                print(f"  → {len(func_calls)} function calls extracted")
             except Exception as e:
                 print("Error extracting function calls:", repr(e))
 
-            print("CANDIDATES")
-            print(response.candidates)
-
         except Exception as e:
             print("SEND MESSAGE ERROR:", repr(e))
-            yield 'data: ' + json.dumps({"type": "log", "message": f"Gemini API Error in tool loop: {e}. Falling back."}) + "\n\n"
+            yield 'data: ' + json.dumps({"type": "log", "message": f"API Error in tool loop: {e}. Falling back."}) + "\n\n"
             break
 
-        # If no function calls were extracted, the model is done with tool use
         if not func_calls:
             if response_text:
                 yield 'data: ' + json.dumps({"type": "log", "message": f"Gemini concluded: {response_text[:200]}"}) + "\n\n"
@@ -221,12 +221,11 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
                 yield 'data: ' + json.dumps({"type": "log", "message": "Tool gathering phase complete."}) + "\n\n"
             break
 
-        print("6 Entering tool loop")
         function_responses = []
         for fc in func_calls:
             tool_name = fc.name
             args = fc.args
-            yield 'data: ' + json.dumps({"type": "log", "message": f"Calling tool: {tool_name}({args})"}) + "\n\n"
+            yield 'data: ' + json.dumps({"type": "log", "message": f"Calling tool: {tool_name}({json.dumps(args, default=str)[:100]})"}) + "\n\n"
             yield 'data: ' + json.dumps({"type": "step_start", "name": tool_name}) + "\n\n"
             
             func = next((t for t in pravah_tools if t.__name__ == tool_name), None)
@@ -236,7 +235,7 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
                     result = func(**args)
                     t_dur = int((time.time() - t_start) * 1000)
                     tool_results_dict[tool_name] = result
-                    yield 'data: ' + json.dumps({"type": "step_end", "name": tool_name, "status": "success", "duration": f"{t_dur} ms", "result": result}) + "\n\n"
+                    yield 'data: ' + json.dumps({"type": "step_end", "name": tool_name, "status": "success", "duration": f"{t_dur} ms", "result": result}, default=str) + "\n\n"
                 except Exception as e:
                     result = {"error": str(e)}
                     yield 'data: ' + json.dumps({"type": "step_end", "name": tool_name, "status": "error", "duration": "0 ms", "result": str(e)}) + "\n\n"
@@ -251,7 +250,6 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
                     response={"error": "Tool not found"}
                 ))
         
-        # Send ALL function responses back together for the next turn
         prompt = function_responses
                 
     # 3. Dynamic Clarification
@@ -262,21 +260,38 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
             "confidence": 40
         }
         yield 'data: ' + json.dumps({"type": "clarification", "data": clarification}) + "\n\n"
-        return # Terminate the stream early, wait for user response
+        return
         
-    clarification = None # No clarification needed if we passed
-    yield 'data: ' + json.dumps({"type": "log", "message": "Context gathering complete. Preparing for expert deliberation..."}) + "\n\n"
+    clarification = None
+    yield 'data: ' + json.dumps({"type": "log", "message": "Multi-agent context complete. Running expert deliberation + scenario analysis..."}) + "\n\n"
     
     context = f"Extracted: {json.dumps(extracted)}\nTool Results: {json.dumps(tool_results_dict, default=str)}"
     
-    # 4. Single Unified Expert Resolution Call
+    # 4. Expert Resolution + Scenario Generation
     yield 'data: ' + json.dumps({"type": "step_start", "name": "Expert Resolution"}) + "\n\n"
     e_start = time.time()
     
     try:
         resolution = call_llm(
-            prompt=f"Given the Context:\n{context}\n\nAct as both a Traffic Operations Expert and an Infrastructure Planning Expert. Provide recommendations and confidence levels for both, and then resolve them into a final decision. Also provide a public notice in Nepali and a short SMS alert.",
-            system_instruction="You are the final decision engine (Gemma). Provide structured traffic and infrastructure advice, then resolve conflicts.",
+            prompt=f"""Given the Context:
+{context}
+
+You must act as FOUR expert agents and then generate THREE decision scenarios:
+
+1. TRAFFIC OPERATIONS EXPERT: Analyze congestion, detour quality, queue predictions, and recovery time.
+2. INFRASTRUCTURE EXPERT: Analyze bridge health, failure probability, remaining capacity.
+3. EMERGENCY RESPONSE EXPERT: Analyze ambulance delays, hospital access, available emergency units.
+4. PLANNING EXPERT: Analyze economic loss, carbon emissions, long-term impact.
+
+Then generate THREE scenarios for the decision maker:
+- Scenario A: The safest option (e.g., full closure with detour)
+- Scenario B: A balanced compromise (e.g., partial closure or time-restricted)
+- Scenario C: The least disruptive option (e.g., keep open with restrictions)
+
+For each scenario provide: action, travel impact (%), safety risk level, and estimated economic cost.
+
+Finally, provide a recommended decision, Nepali public notice, and SMS alert.""",
+            system_instruction="You are PRAVAH's final decision engine. Provide structured multi-expert analysis with scenario comparison.",
             response_schema=UNIFIED_RESOLUTION_SCHEMA
         )
         e_dur = int((time.time() - e_start) * 1000)
@@ -286,42 +301,93 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
         print(f"Expert Resolution error: {e}")
         yield 'data: ' + json.dumps({"type": "step_end", "name": "Expert Resolution", "status": "error", "duration": f"{e_dur} ms"}) + "\n\n"
         resolution = {
-            "traffic_recommendation": "Analysis unavailable (fallback active).",
-            "traffic_reason": "Expert module encountered an error.",
-            "traffic_confidence": "50",
-            "infra_recommendation": "Maintain standard safety protocols.",
-            "infra_reason": "Default infrastructure assessment applied.",
-            "infra_confidence": "50",
-            "final_decision": "Proceed with caution using standard safety measures.",
-            "final_explanation": "System fallback activated due to processing error.",
-            "public_notice_nepali": "सुरक्षा मापदण्ड लागू गरिएको छ। (Fallback)",
-            "sms": "PRAVAH: Standard safety measures active."
+            "traffic_recommendation": "Analysis unavailable (fallback).", "traffic_reason": "Error.", "traffic_confidence": "50",
+            "infra_recommendation": "Maintain safety protocols.", "infra_reason": "Fallback.", "infra_confidence": "50",
+            "emergency_recommendation": "Keep emergency routes open.", "emergency_reason": "Fallback.", "emergency_confidence": "50",
+            "planning_recommendation": "Assess impact post-event.", "planning_reason": "Fallback.",
+            "final_decision": "Proceed with caution.", "final_explanation": "Fallback activated.",
+            "public_notice_nepali": "सुरक्षा मापदण्ड लागू गरिएको छ।", "sms": "PRAVAH: Safety measures active.",
+            "scenario_a_action": "Full closure", "scenario_a_travel_impact": "+25%", "scenario_a_safety_risk": "Low", "scenario_a_economic_cost": "High",
+            "scenario_b_action": "Partial closure", "scenario_b_travel_impact": "+10%", "scenario_b_safety_risk": "Medium", "scenario_b_economic_cost": "Medium",
+            "scenario_c_action": "Keep open", "scenario_c_travel_impact": "+0%", "scenario_c_safety_risk": "High", "scenario_c_economic_cost": "Low",
         }
     
-    sim_res = tool_results_dict.get("simulate_network_cascade", {})
-    weather_res = tool_results_dict.get("get_monsoon_landslide_risk", {})
-    bridge_res = tool_results_dict.get("check_bridge_tonnage", {})
+    # Build evidence from tool results
+    sim_res = tool_results_dict.get("simulate_route_closure", tool_results_dict.get("simulate_network_cascade", {}))
+    weather_res = tool_results_dict.get("get_weather_forecast", tool_results_dict.get("get_monsoon_landslide_risk", {}))
+    bridge_res = tool_results_dict.get("get_bridge_health", tool_results_dict.get("check_bridge_tonnage", {}))
+    landslide_res = tool_results_dict.get("predict_landslide_probability", {})
+    river_res = tool_results_dict.get("check_river_level", {})
+    ambulance_res = tool_results_dict.get("estimate_ambulance_delay", {})
+    economic_res = tool_results_dict.get("estimate_economic_loss", {})
+    traffic_res = tool_results_dict.get("get_live_traffic_status", {})
     
     evidence = {
         "bridge": {
-            "max": f"{bridge_res.get('max_load', 0)} t",
-            "status": f"{bridge_res.get('truck_weight', 0)} t",
-            "result": bridge_res.get('status', 'N/A')
+            "max": f"{bridge_res.get('load_limit_tonnes', bridge_res.get('max_load', 0))} t",
+            "status": f"{bridge_res.get('condition', bridge_res.get('truck_weight', 0))}",
+            "result": bridge_res.get('condition', bridge_res.get('status', 'N/A'))
         } if bridge_res else None,
         "weather": {
-            "condition": "Rain" if weather_res.get("rain_mm", 0) > 0 else "Clear",
-            "rain": f"{weather_res.get('rain_mm', 0)} mm",
-            "risk": weather_res.get("risk_level", "Unknown")
+            "condition": weather_res.get("road_condition", "Rain" if weather_res.get("rainfall_today_mm", weather_res.get("rain_mm", 0)) > 0 else "Clear"),
+            "rain": f"{weather_res.get('rainfall_today_mm', weather_res.get('rain_mm', 0))} mm",
+            "risk": landslide_res.get("risk_level", weather_res.get("risk_level", "Unknown"))
         } if weather_res else None,
         "simulation": {
-            "worst_road": sim_res.get("closed_road_simulated", "None"),
+            "worst_road": sim_res.get("closed_road", sim_res.get("closed_road_simulated", "None")),
             "increase": sim_res.get("increase_pct", "0%")
-        } if sim_res else None
+        } if sim_res else None,
+        "emergency": {
+            "ambulance_delay": f"{ambulance_res.get('delay_increase_min', 0)} min",
+            "nearest_hospital": ambulance_res.get("nearest_hospital", "Unknown"),
+            "golden_hour_risk": ambulance_res.get("golden_hour_at_risk", False)
+        } if ambulance_res else None,
+        "economic": {
+            "total_loss": f"NPR {economic_res.get('total_economic_loss_npr', 0):,}",
+            "affected_vehicles": economic_res.get("affected_vehicles", 0)
+        } if economic_res else None,
+        "traffic": {
+            "density": traffic_res.get("traffic_density", "Unknown"),
+            "speed": f"{traffic_res.get('average_speed_kmh', 0)} km/h",
+            "queue": f"{traffic_res.get('queue_length_m', 0)} m"
+        } if traffic_res else None,
+        "river": {
+            "level": river_res.get("level", "Unknown"),
+            "flood_risk": river_res.get("flood_risk", "Unknown"),
+            "discharge": f"{river_res.get('current_discharge_m3s', 0)} m³/s"
+        } if river_res else None
     }
     
-    
     map_cascade = sim_res.get("cascade_visualization", [])
-    memory_results = tool_results_dict.get("query_decision_memory", [])
+    memory_results = tool_results_dict.get("search_similar_incidents", tool_results_dict.get("query_decision_memory", []))
+    
+    # Build scenarios from resolution
+    scenarios = [
+        {
+            "label": "Scenario A",
+            "tag": "Safest",
+            "action": resolution.get("scenario_a_action", "Full closure"),
+            "travel_impact": resolution.get("scenario_a_travel_impact", "+25%"),
+            "safety_risk": resolution.get("scenario_a_safety_risk", "Low"),
+            "economic_cost": resolution.get("scenario_a_economic_cost", "High"),
+        },
+        {
+            "label": "Scenario B",
+            "tag": "Balanced",
+            "action": resolution.get("scenario_b_action", "Partial closure"),
+            "travel_impact": resolution.get("scenario_b_travel_impact", "+10%"),
+            "safety_risk": resolution.get("scenario_b_safety_risk", "Medium"),
+            "economic_cost": resolution.get("scenario_b_economic_cost", "Medium"),
+        },
+        {
+            "label": "Scenario C",
+            "tag": "Least Disruptive",
+            "action": resolution.get("scenario_c_action", "Keep open"),
+            "travel_impact": resolution.get("scenario_c_travel_impact", "+0%"),
+            "safety_risk": resolution.get("scenario_c_safety_risk", "High"),
+            "economic_cost": resolution.get("scenario_c_economic_cost", "Low"),
+        },
+    ]
     
     final_payload = {
         "extracted": extracted,
@@ -330,6 +396,7 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
         "map_cascade": map_cascade,
         "memory": memory_results,
         "context": tool_results_dict,
+        "scenarios": scenarios,
         "experts": {
             "traffic": {
                 "recommendation": resolution.get("traffic_recommendation", ""),
@@ -340,6 +407,15 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
                 "recommendation": resolution.get("infra_recommendation", ""),
                 "reason": resolution.get("infra_reason", ""),
                 "confidence": resolution.get("infra_confidence", "")
+            },
+            "emergency": {
+                "recommendation": resolution.get("emergency_recommendation", ""),
+                "reason": resolution.get("emergency_reason", ""),
+                "confidence": resolution.get("emergency_confidence", "")
+            },
+            "planning": {
+                "recommendation": resolution.get("planning_recommendation", ""),
+                "reason": resolution.get("planning_reason", ""),
             }
         },
         "final": {
