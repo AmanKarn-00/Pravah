@@ -151,7 +151,7 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
                     )
                 ),
                 temperature=0.2,
-                system_instruction="You are an AI infrastructure decision orchestrator. Use the available tools whenever you need external information. If required information is missing, call ask_clarification. Never invent data."
+                system_instruction="You are an AI infrastructure decision orchestrator. Use the available tools to gather context for infrastructure decisions. IMPORTANT: Before calling any analysis tools, check if critical details (road/bridge name, time, duration) are missing or empty. If ANY critical detail is missing, you MUST call ask_clarification FIRST to get the missing information. Never assume or invent missing data."
             ),
             history=gemini_history,
         )
@@ -162,9 +162,13 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
     
     tool_results_dict = {}
     
-    # The prompt is the very last user message
-    latest_msg = messages[-1]["content"] if messages else ""
-    prompt = f"Analyze this event and gather necessary context using tools. New User Input: '{latest_msg}'.\nExtracted details so far: {json.dumps(extracted)}"
+    # Build prompt that highlights missing fields
+    missing_fields = [k for k, v in extracted.items() if not v or v in ('Unknown', '')]
+    missing_note = ""
+    if missing_fields:
+        missing_note = f"\nWARNING: The following critical fields are missing or empty: {', '.join(missing_fields)}. You MUST call ask_clarification to gather these before proceeding with analysis tools."
+    
+    prompt = f"Analyze this event and gather necessary context using tools. New User Input: '{latest_msg}'.\nExtracted details so far: {json.dumps(extracted)}{missing_note}"
     
     MAX_TURNS = 5
     for turn in range(MAX_TURNS):
@@ -263,19 +267,36 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
     clarification = None # No clarification needed if we passed
     yield 'data: ' + json.dumps({"type": "log", "message": "Context gathering complete. Preparing for expert deliberation..."}) + "\n\n"
     
-    context = f"Extracted: {json.dumps(extracted)}\nTool Results: {json.dumps(tool_results_dict)}"
+    context = f"Extracted: {json.dumps(extracted)}\nTool Results: {json.dumps(tool_results_dict, default=str)}"
     
     # 4. Single Unified Expert Resolution Call
     yield 'data: ' + json.dumps({"type": "step_start", "name": "Expert Resolution"}) + "\n\n"
     e_start = time.time()
     
-    resolution = call_llm(
-        prompt=f"Given the Context:\n{context}\n\nAct as both a Traffic Operations Expert and an Infrastructure Planning Expert. Provide recommendations and confidence levels for both, and then resolve them into a final decision. Also provide a public notice in Nepali and a short SMS alert.",
-        system_instruction="You are the final decision engine (Gemma). Provide structured traffic and infrastructure advice, then resolve conflicts.",
-        response_schema=UNIFIED_RESOLUTION_SCHEMA
-    )
-    e_dur = int((time.time() - e_start) * 1000)
-    yield 'data: ' + json.dumps({"type": "step_end", "name": "Expert Resolution", "status": "success", "duration": f"{e_dur} ms"}) + "\n\n"
+    try:
+        resolution = call_llm(
+            prompt=f"Given the Context:\n{context}\n\nAct as both a Traffic Operations Expert and an Infrastructure Planning Expert. Provide recommendations and confidence levels for both, and then resolve them into a final decision. Also provide a public notice in Nepali and a short SMS alert.",
+            system_instruction="You are the final decision engine (Gemma). Provide structured traffic and infrastructure advice, then resolve conflicts.",
+            response_schema=UNIFIED_RESOLUTION_SCHEMA
+        )
+        e_dur = int((time.time() - e_start) * 1000)
+        yield 'data: ' + json.dumps({"type": "step_end", "name": "Expert Resolution", "status": "success", "duration": f"{e_dur} ms"}) + "\n\n"
+    except Exception as e:
+        e_dur = int((time.time() - e_start) * 1000)
+        print(f"Expert Resolution error: {e}")
+        yield 'data: ' + json.dumps({"type": "step_end", "name": "Expert Resolution", "status": "error", "duration": f"{e_dur} ms"}) + "\n\n"
+        resolution = {
+            "traffic_recommendation": "Analysis unavailable (fallback active).",
+            "traffic_reason": "Expert module encountered an error.",
+            "traffic_confidence": "50",
+            "infra_recommendation": "Maintain standard safety protocols.",
+            "infra_reason": "Default infrastructure assessment applied.",
+            "infra_confidence": "50",
+            "final_decision": "Proceed with caution using standard safety measures.",
+            "final_explanation": "System fallback activated due to processing error.",
+            "public_notice_nepali": "सुरक्षा मापदण्ड लागू गरिएको छ। (Fallback)",
+            "sms": "PRAVAH: Standard safety measures active."
+        }
     
     sim_res = tool_results_dict.get("simulate_network_cascade", {})
     weather_res = tool_results_dict.get("get_monsoon_landslide_risk", {})
@@ -329,4 +350,4 @@ def orchestrate_decision_stream(messages: List[Dict[str, str]]) -> Generator[str
         }
     }
     
-    yield 'data: ' + json.dumps({"type": "final", "data": final_payload}) + "\n\n"
+    yield 'data: ' + json.dumps({"type": "final", "data": final_payload}, default=str) + "\n\n"
