@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, Polyline, Popup, Circle, Marker } from 'react-leaflet';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { MapContainer, TileLayer, Polyline, Popup, Circle, Marker, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { AlertTriangle, CloudRain, Car, Activity } from 'lucide-react';
@@ -19,13 +19,57 @@ const createIcon = (color, emoji) => L.divIcon({
   iconAnchor: [14, 14],
 });
 
-const roads = [
-  { name: "Road A (Suryabinayak)", positions: [[27.67, 85.42], [27.66, 85.44]] },
-  { name: "Road B (Jagati)", positions: [[27.66, 85.44], [27.655, 85.455]] },
-  { name: "Road C (Sanga)", positions: [[27.655, 85.455], [27.645, 85.475]] },
-  { name: "Road D (Banepa)", positions: [[27.645, 85.475], [27.635, 85.50]] },
-  { name: "Alt 1", positions: [[27.67, 85.42], [27.665, 85.46]] },
-  { name: "Alt 2", positions: [[27.665, 85.46], [27.635, 85.50]] },
+const createLabelIcon = (text, color, bgColor) => L.divIcon({
+  html: `<div style="
+    background:${bgColor};
+    color:${color};
+    font-size:11px;
+    font-weight:700;
+    padding:2px 8px;
+    border-radius:6px;
+    border:1.5px solid ${color};
+    white-space:nowrap;
+    box-shadow:0 2px 8px rgba(0,0,0,0.4);
+    letter-spacing:0.5px;
+    text-transform:uppercase;
+  ">${text}</div>`,
+  className: '',
+  iconSize: [0, 0],
+  iconAnchor: [0, 0],
+});
+
+// ── Bhaktapur-Banepa corridor bounds ──
+const AREA_BOUNDS = [
+  [27.62, 85.40],  // southwest
+  [27.69, 85.52],  // northeast
+];
+const CENTER = [27.655, 85.46];
+const MIN_ZOOM = 13;
+const MAX_ZOOM = 17;
+const DEFAULT_ZOOM = 14;
+
+// ── Road network ──
+const mainRoads = [
+  { name: "Road A (Suryabinayak)", positions: [[27.67, 85.42], [27.66, 85.44]], label: "Road A" },
+  { name: "Road B (Jagati)", positions: [[27.66, 85.44], [27.655, 85.455]], label: "Road B" },
+  { name: "Road C (Sanga)", positions: [[27.655, 85.455], [27.645, 85.475]], label: "Road C" },
+  { name: "Road D (Banepa)", positions: [[27.645, 85.475], [27.635, 85.50]], label: "Road D" },
+];
+
+const altRoutes = [
+  { name: "Alt 1", positions: [[27.67, 85.42], [27.665, 85.46]], label: "Alt Route A" },
+  { name: "Alt 2", positions: [[27.665, 85.46], [27.635, 85.50]], label: "Alt Route B" },
+];
+
+const roads = [...mainRoads, ...altRoutes];
+
+// Key junction / landmark points for labelling
+const junctions = [
+  { name: "Suryabinayak", pos: [27.67, 85.42], emoji: "📍" },
+  { name: "Jagati", pos: [27.66, 85.44], emoji: "📍" },
+  { name: "Sanga", pos: [27.655, 85.455], emoji: "📍" },
+  { name: "Banepa", pos: [27.635, 85.50], emoji: "📍" },
+  { name: "Alt Junction", pos: [27.665, 85.46], emoji: "🔀" },
 ];
 
 const landslideZones = [
@@ -39,7 +83,37 @@ const floodZones = [
   { center: [27.64, 85.49], radius: 350, label: 'Low Basin Area' },
 ];
 
-// Animated vehicles component
+// ── Component that constrains the map to our area ──
+const BoundsEnforcer = () => {
+  const map = useMap();
+
+  useEffect(() => {
+    // Set hard bounds so users can't pan away
+    map.setMaxBounds(L.latLngBounds(AREA_BOUNDS));
+    map.setMinZoom(MIN_ZOOM);
+    map.setMaxZoom(MAX_ZOOM);
+
+    // Fit view to the road corridor
+    const corridorBounds = L.latLngBounds([
+      [27.630, 85.41],
+      [27.675, 85.51],
+    ]);
+    map.fitBounds(corridorBounds, { padding: [30, 30], maxZoom: DEFAULT_ZOOM });
+
+    // Prevent the grey void when user drags near edges
+    const onDragEnd = () => {
+      if (!map.getBounds().intersects(L.latLngBounds(AREA_BOUNDS))) {
+        map.panInsideBounds(L.latLngBounds(AREA_BOUNDS), { animate: true });
+      }
+    };
+    map.on('dragend', onDragEnd);
+    return () => map.off('dragend', onDragEnd);
+  }, [map]);
+
+  return null;
+};
+
+// ── Animated vehicles component ──
 const AnimatedVehicles = ({ activeRoads }) => {
   const [positions, setPositions] = useState([]);
   
@@ -88,7 +162,6 @@ const AnimatedVehicles = ({ activeRoads }) => {
 };
 
 const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }) => {
-  const position = [27.65, 85.47];
   const [activeLayers, setActiveLayers] = useState({
     traffic: true, weather: true, landslide: true, vehicles: true
   });
@@ -185,6 +258,15 @@ const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }
   const closedRoad = simulationData?.closed_road || simulationData?.closed_road_simulated || '';
   const increaseStr = simulationData?.increase_pct || '';
 
+  // Only show routes/overlays once we have data from the backend
+  const hasData = !!(simulationData || (mapCascade && mapCascade.length > 0) || evidence);
+
+  // Helper: midpoint of a road segment for label placement
+  const midpoint = (positions) => [
+    (positions[0][0] + positions[1][0]) / 2,
+    (positions[0][1] + positions[1][1]) / 2,
+  ];
+
   return (
     <div className="h-full w-full rounded-xl overflow-hidden shadow-lg border border-slate-700 bg-slate-800 relative z-0 flex flex-col">
       <style>{`
@@ -211,6 +293,23 @@ const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }
         }
         @keyframes drawCascade {
           to { stroke-dashoffset: 0; }
+        }
+        .alt-route-dash {
+          stroke-dasharray: 12, 8;
+          animation: altPulse 2s ease-in-out infinite;
+        }
+        @keyframes altPulse {
+          0%, 100% { opacity: 0.7; }
+          50% { opacity: 1; }
+        }
+        .leaflet-tooltip.route-label {
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+          font-weight: 700;
+          font-size: 11px;
+          letter-spacing: 0.5px;
+          padding: 0 !important;
         }
       `}</style>
       
@@ -257,6 +356,10 @@ const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }
             <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]" />
             <span className="text-slate-400 font-medium">Critical</span>
           </div>
+          <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-slate-600">
+            <div className="w-5 h-0.5 rounded" style={{ background: 'linear-gradient(90deg, #a78bfa 33%, transparent 33%, transparent 66%, #a78bfa 66%)' }} />
+            <span className="text-violet-400 font-medium">Alt Route</span>
+          </div>
           {closedRoad && (
             <div className="ml-auto flex items-center gap-1 text-red-400 font-bold truncate max-w-[40%]">
               <AlertTriangle className="w-3 h-3 shrink-0" />
@@ -274,7 +377,18 @@ const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }
       </div>
 
       <div className="flex-1 relative">
-        <MapContainer center={position} zoom={13} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 10 }}>
+        <MapContainer
+          center={CENTER}
+          zoom={DEFAULT_ZOOM}
+          scrollWheelZoom={true}
+          maxBounds={AREA_BOUNDS}
+          maxBoundsViscosity={1.0}
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
+          style={{ height: '100%', width: '100%', zIndex: 10 }}
+        >
+          <BoundsEnforcer />
+
           {/* Satellite Imagery */}
           <TileLayer
             attribution='Tiles &copy; Esri'
@@ -286,10 +400,10 @@ const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }
             opacity={0.7}
           />
 
-          {/* Road outlines (depth effect) */}
-          {activeLayers.traffic && roads.map((road, idx) => (
+          {/* ── Main Road outlines (depth effect) ── */}
+          {hasData && activeLayers.traffic && mainRoads.map((road, idx) => (
             <Polyline 
-              key={`outline-${idx}`}
+              key={`outline-main-${idx}`}
               positions={road.positions} 
               color="rgba(0,0,0,0.5)"
               weight={8}
@@ -297,16 +411,34 @@ const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }
             />
           ))}
 
-          {/* Traffic Roads */}
-          {activeLayers.traffic && roads.map((road, idx) => (
+          {/* ── Main Traffic Roads ── */}
+          {hasData && activeLayers.traffic && mainRoads.map((road, idx) => (
             <Polyline 
-              key={`road-${idx}`}
+              key={`road-main-${idx}`}
               positions={road.positions} 
               color={getColor(road.name)} 
               weight={5}
               opacity={0.9}
               className={getTrafficClass(road.name)}
             >
+              <Tooltip
+                permanent
+                direction="center"
+                className="route-label"
+                offset={[0, -12]}
+              >
+                <span style={{
+                  color: '#fff',
+                  background: 'rgba(15,23,42,0.8)',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  border: `1px solid ${getColor(road.name)}60`,
+                }}>
+                  {road.label}
+                </span>
+              </Tooltip>
               <Popup>
                 <div style={{color: '#1e293b', fontWeight: 600}}>{road.name}</div>
                 <div style={{fontSize: '11px', color: '#64748b'}}>
@@ -314,6 +446,76 @@ const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }
                 </div>
               </Popup>
             </Polyline>
+          ))}
+
+          {/* ── Alt Route outlines (distinct dashed style) ── */}
+          {hasData && activeLayers.traffic && altRoutes.map((road, idx) => (
+            <Polyline
+              key={`outline-alt-${idx}`}
+              positions={road.positions}
+              color="rgba(0,0,0,0.4)"
+              weight={9}
+              opacity={0.3}
+              dashArray="12, 8"
+            />
+          ))}
+
+          {/* ── Alt Routes (visually distinct — purple/violet dashed) ── */}
+          {hasData && activeLayers.traffic && altRoutes.map((road, idx) => {
+            const color = getColor(road.name);
+            const isDefault = color === '#22c55e'; // no congestion data → use distinctive alt color
+            const displayColor = isDefault ? '#a78bfa' : color;
+            return (
+              <Polyline
+                key={`road-alt-${idx}`}
+                positions={road.positions}
+                color={displayColor}
+                weight={5}
+                opacity={0.9}
+                dashArray="12, 8"
+                className={isDefault ? 'alt-route-dash' : getTrafficClass(road.name)}
+              >
+                <Tooltip
+                  permanent
+                  direction="center"
+                  className="route-label"
+                  offset={[0, -14]}
+                >
+                  <span style={{
+                    color: '#c4b5fd',
+                    background: 'rgba(15,23,42,0.85)',
+                    padding: '2px 8px',
+                    borderRadius: '5px',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    letterSpacing: '0.5px',
+                    border: '1.5px solid #a78bfa80',
+                    textTransform: 'uppercase',
+                  }}>
+                    🔀 {road.label}
+                  </span>
+                </Tooltip>
+                <Popup>
+                  <div style={{color: '#1e293b', fontWeight: 600}}>{road.label}</div>
+                  <div style={{fontSize: '11px', color: '#7c3aed'}}>
+                    Alternative Route • {congestionMap[road.name] || 'Available'}
+                  </div>
+                </Popup>
+              </Polyline>
+            );
+          })}
+
+          {/* ── Junction markers ── */}
+          {hasData && activeLayers.traffic && junctions.map((jn, idx) => (
+            <Marker
+              key={`junction-${idx}`}
+              position={jn.pos}
+              icon={createLabelIcon(
+                `${jn.emoji} ${jn.name}`,
+                jn.name === 'Alt Junction' ? '#a78bfa' : '#e2e8f0',
+                jn.name === 'Alt Junction' ? 'rgba(124,58,237,0.25)' : 'rgba(15,23,42,0.85)'
+              )}
+            />
           ))}
 
           {/* Landslide Risk Zones */}
@@ -367,7 +569,7 @@ const MapWidget = ({ simulationData, mapCascade, currentMapStep = -1, evidence }
           ))}
 
           {/* Live Vehicle Markers */}
-          {activeLayers.vehicles && <AnimatedVehicles activeRoads={activeRoads} />}
+          {hasData && activeLayers.vehicles && <AnimatedVehicles activeRoads={activeRoads} />}
         </MapContainer>
       </div>
     </div>

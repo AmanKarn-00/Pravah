@@ -29,18 +29,24 @@ UNIFIED_RESOLUTION_SCHEMA: Dict[str, Any] = {
         "final_explanation": {"type": "STRING"},
         "public_notice_nepali": {"type": "STRING"},
         "sms": {"type": "STRING"},
+        # Scenario A — Safest
         "scenario_a_action": {"type": "STRING"},
         "scenario_a_travel_impact": {"type": "STRING"},
         "scenario_a_safety_risk": {"type": "STRING"},
-        "scenario_a_economic_cost": {"type": "STRING"},
+        "scenario_a_detour_route": {"type": "STRING"},
+        "scenario_a_rationale": {"type": "STRING"},
+        # Scenario B — Balanced
         "scenario_b_action": {"type": "STRING"},
         "scenario_b_travel_impact": {"type": "STRING"},
         "scenario_b_safety_risk": {"type": "STRING"},
-        "scenario_b_economic_cost": {"type": "STRING"},
+        "scenario_b_detour_route": {"type": "STRING"},
+        "scenario_b_rationale": {"type": "STRING"},
+        # Scenario C — Least Disruptive
         "scenario_c_action": {"type": "STRING"},
         "scenario_c_travel_impact": {"type": "STRING"},
         "scenario_c_safety_risk": {"type": "STRING"},
-        "scenario_c_economic_cost": {"type": "STRING"},
+        "scenario_c_detour_route": {"type": "STRING"},
+        "scenario_c_rationale": {"type": "STRING"},
     },
     "required": [
         "traffic_recommendation", "traffic_reason", "traffic_confidence",
@@ -49,8 +55,11 @@ UNIFIED_RESOLUTION_SCHEMA: Dict[str, Any] = {
         "planning_recommendation", "planning_reason",
         "final_decision", "final_explanation",
         "public_notice_nepali", "sms",
-        "scenario_a_action", "scenario_a_travel_impact", "scenario_a_safety_risk", "scenario_a_economic_cost",
-        "scenario_b_action", "scenario_b_travel_impact", "scenario_b_safety_risk", "scenario_b_economic_cost",
-        "scenario_c_action", "scenario_c_travel_impact", "scenario_c_safety_risk", "scenario_c_economic_cost",
+        "scenario_a_action", "scenario_a_travel_impact", "scenario_a_safety_risk",
+        "scenario_a_detour_route", "scenario_a_rationale",
+        "scenario_b_action", "scenario_b_travel_impact", "scenario_b_safety_risk",
+        "scenario_b_detour_route", "scenario_b_rationale",
+        "scenario_c_action", "scenario_c_travel_impact", "scenario_c_safety_risk",
+        "scenario_c_detour_route", "scenario_c_rationale",
     ]
 }

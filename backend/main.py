@@ -31,5 +31,10 @@ class ChatRequest(BaseModel):
 async def chat_endpoint(request: ChatRequest):
     return StreamingResponse(orchestrate_decision_stream([msg.model_dump() for msg in request.messages]), media_type="text/event-stream")
 
+@app.get("/api/weather")
+async def weather_endpoint():
+    from tools import get_weather_forecast
+    return get_weather_forecast("Bhaktapur")
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

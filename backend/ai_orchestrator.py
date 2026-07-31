@@ -90,12 +90,15 @@ def call_llm(prompt: str, system_instruction: str = None, response_schema: Any =
             "final_explanation": "System fallback activated.",
             "public_notice_nepali": "सुरक्षा मापदण्ड लागू गरिएको छ। (Fallback)",
             "sms": "PRAVAH: Standard safety active.",
-            "scenario_a_action": "Full closure with detour", "scenario_a_travel_impact": "+25%",
-            "scenario_a_safety_risk": "Low", "scenario_a_economic_cost": "High",
-            "scenario_b_action": "Partial closure (one lane)", "scenario_b_travel_impact": "+10%",
-            "scenario_b_safety_risk": "Medium", "scenario_b_economic_cost": "Medium",
-            "scenario_c_action": "Keep open with restrictions", "scenario_c_travel_impact": "+0%",
-            "scenario_c_safety_risk": "High", "scenario_c_economic_cost": "Low",
+            "scenario_a_action": "Full closure with detour", "scenario_a_travel_impact": "+25 min",
+            "scenario_a_safety_risk": "Low", "scenario_a_detour_route": "Road A via Sanga Pass",
+            "scenario_a_rationale": "Eliminates all risk by closing the road entirely and routing traffic through the safest corridor.",
+            "scenario_b_action": "Partial closure (one lane)", "scenario_b_travel_impact": "+10 min",
+            "scenario_b_safety_risk": "Medium", "scenario_b_detour_route": "Shared lane on Road B",
+            "scenario_b_rationale": "Balances throughput with safety by keeping one lane open with weight restrictions.",
+            "scenario_c_action": "Keep open with restrictions", "scenario_c_travel_impact": "+0 min",
+            "scenario_c_safety_risk": "High", "scenario_c_detour_route": "No detour needed",
+            "scenario_c_rationale": "Maintains normal flow but exposes road users to structural and weather risks.",
         }
     elif response_schema == EXTRACTION_SCHEMA:
          return {"event": "Incident", "road": "Unknown", "time": "Unknown", "duration": "Unknown"}
@@ -337,12 +340,17 @@ You must act as FOUR expert agents and then generate THREE decision scenarios:
 3. EMERGENCY RESPONSE EXPERT: Analyze ambulance delays, hospital access, available emergency units.
 4. PLANNING EXPERT: Analyze economic loss, carbon emissions, long-term impact.
 
-Then generate THREE scenarios for the decision maker:
-- Scenario A: The safest option (e.g., full closure with detour)
-- Scenario B: A balanced compromise (e.g., partial closure or time-restricted)
-- Scenario C: The least disruptive option (e.g., keep open with restrictions)
+Then generate THREE actionable scenarios for the decision maker:
+- Scenario A (Safest): Maximum safety, e.g. full closure with detour.
+- Scenario B (Balanced): Compromise between safety and disruption.
+- Scenario C (Least Disruptive): Minimal disruption, e.g. keep open with restrictions.
 
-For each scenario provide: action, travel impact (%), safety risk level, and estimated economic cost.
+For each scenario provide:
+  - action: What to do
+  - travel_impact: Qualitative description, e.g. "Significant delay" or "Moderate increase"
+  - safety_risk: Low / Medium / High
+  - detour_route: The suggested route, e.g. "Road A via Sanga Pass"
+  - rationale: 1-2 sentences explaining why this option exists based on tool data
 
 Finally, provide a recommended decision, Nepali public notice, and SMS alert.""",
             system_instruction="You are PRAVAH's final decision engine. Provide structured multi-expert analysis with scenario comparison.",
@@ -361,9 +369,12 @@ Finally, provide a recommended decision, Nepali public notice, and SMS alert."""
             "planning_recommendation": "Assess impact post-event.", "planning_reason": "Fallback.",
             "final_decision": "Proceed with caution.", "final_explanation": "Fallback activated.",
             "public_notice_nepali": "सुरक्षा मापदण्ड लागू गरिएको छ।", "sms": "PRAVAH: Safety measures active.",
-            "scenario_a_action": "Full closure", "scenario_a_travel_impact": "+25%", "scenario_a_safety_risk": "Low", "scenario_a_economic_cost": "High",
-            "scenario_b_action": "Partial closure", "scenario_b_travel_impact": "+10%", "scenario_b_safety_risk": "Medium", "scenario_b_economic_cost": "Medium",
-            "scenario_c_action": "Keep open", "scenario_c_travel_impact": "+0%", "scenario_c_safety_risk": "High", "scenario_c_economic_cost": "Low",
+            "scenario_a_action": "Full closure", "scenario_a_travel_impact": "Significant delay", "scenario_a_safety_risk": "Low",
+            "scenario_a_detour_route": "Road A via Sanga Pass", "scenario_a_rationale": "Full closure eliminates risk.",
+            "scenario_b_action": "Partial closure", "scenario_b_travel_impact": "Moderate increase", "scenario_b_safety_risk": "Medium",
+            "scenario_b_detour_route": "Shared lane on Road B", "scenario_b_rationale": "Balances safety and throughput.",
+            "scenario_c_action": "Keep open", "scenario_c_travel_impact": "Minimal change", "scenario_c_safety_risk": "High",
+            "scenario_c_detour_route": "No detour needed", "scenario_c_rationale": "Maintains flow but increases risk.",
         }
     
     # Build evidence from tool results
@@ -421,25 +432,28 @@ Finally, provide a recommended decision, Nepali public notice, and SMS alert."""
             "label": "Scenario A",
             "tag": "Safest",
             "action": resolution.get("scenario_a_action", "Full closure"),
-            "travel_impact": resolution.get("scenario_a_travel_impact", "+25%"),
+            "travel_impact": resolution.get("scenario_a_travel_impact", "Significant delay"),
             "safety_risk": resolution.get("scenario_a_safety_risk", "Low"),
-            "economic_cost": resolution.get("scenario_a_economic_cost", "High"),
+            "detour_route": resolution.get("scenario_a_detour_route", "Road A via Sanga Pass"),
+            "rationale": resolution.get("scenario_a_rationale", ""),
         },
         {
             "label": "Scenario B",
             "tag": "Balanced",
             "action": resolution.get("scenario_b_action", "Partial closure"),
-            "travel_impact": resolution.get("scenario_b_travel_impact", "+10%"),
+            "travel_impact": resolution.get("scenario_b_travel_impact", "Moderate increase"),
             "safety_risk": resolution.get("scenario_b_safety_risk", "Medium"),
-            "economic_cost": resolution.get("scenario_b_economic_cost", "Medium"),
+            "detour_route": resolution.get("scenario_b_detour_route", "Shared lane on Road B"),
+            "rationale": resolution.get("scenario_b_rationale", ""),
         },
         {
             "label": "Scenario C",
             "tag": "Least Disruptive",
             "action": resolution.get("scenario_c_action", "Keep open"),
-            "travel_impact": resolution.get("scenario_c_travel_impact", "+0%"),
+            "travel_impact": resolution.get("scenario_c_travel_impact", "Minimal change"),
             "safety_risk": resolution.get("scenario_c_safety_risk", "High"),
-            "economic_cost": resolution.get("scenario_c_economic_cost", "Low"),
+            "detour_route": resolution.get("scenario_c_detour_route", "No detour needed"),
+            "rationale": resolution.get("scenario_c_rationale", ""),
         },
     ]
     

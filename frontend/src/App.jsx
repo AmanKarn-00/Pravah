@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import GemmaOrchestrator from './components/GemmaOrchestrator';
 import MapWidget from './components/MapWidget';
-import ExpertPanel from './components/ExpertPanel';
 import EvidencePanel from './components/EvidencePanel';
-import MemoryPanel from './components/MemoryPanel';
-import ScenarioPanel from './components/ScenarioPanel';
-import BaselineComparison from './components/BaselineComparison';
+import ExpertPanel from './components/ExpertPanel';
+import ScenarioCards from './components/ScenarioCards';
 import PipelineVisualizer from './components/PipelineVisualizer';
 import ParticlesBackground from './components/ParticlesBackground';
-import { Activity, HardHat, CheckCircle2, MessageSquare, AlertTriangle, Siren, BarChart3 } from 'lucide-react';
+import { Activity, CheckCircle2, MessageSquare, AlertTriangle, Zap, HardHat, Siren, BarChart3, CloudRain, Thermometer, Wind, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 
@@ -19,6 +17,15 @@ function App() {
   const [currentMapStep, setCurrentMapStep] = useState(-1);
   const [currentConfidence, setCurrentConfidence] = useState(0);
   const [chatHistory, setChatHistory] = useState([]);
+  const [liveWeather, setLiveWeather] = useState(null);
+
+  // Fetch live weather on mount
+  useEffect(() => {
+    fetch('http://localhost:8000/api/weather')
+      .then(res => res.json())
+      .then(data => setLiveWeather(data))
+      .catch(() => {});
+  }, []);
   
   const demoStateRef = React.useRef('IDLE');
   const [demoState, setReactDemoState] = useState('IDLE');
@@ -184,26 +191,39 @@ function App() {
       <div className="min-h-screen bg-transparent text-slate-200 p-4 md:p-6 font-sans relative z-10">
         <Toaster position="bottom-right" />
         
-        <header className="max-w-[1600px] mx-auto mb-4 border-b border-slate-700/50 pb-3">
+        {/* ── Header ── */}
+        <header className="max-w-[1600px] mx-auto mb-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+            <div className="w-11 h-11 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
               <Activity className="text-white w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent tracking-tight">
                 PRAVAH
               </h1>
-              <p className="text-sm text-slate-400 tracking-wider">AI Infrastructure Decision Engine</p>
+              <p className="text-xs text-slate-500 tracking-widest uppercase">AI Infrastructure Decision Engine</p>
             </div>
+            {isWorking && (
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="ml-auto flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg"
+              >
+                <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span className="text-xs font-semibold text-emerald-400 tracking-wide">PROCESSING</span>
+              </motion.div>
+            )}
           </div>
         </header>
 
-        <main className="max-w-[1600px] mx-auto">
-          <PipelineVisualizer demoState={demoState} steps={appState?.orchestration_steps || []} />
+        <main className="max-w-[1600px] mx-auto space-y-5">
           
-          {/* TOP ROW: Chat (left) + Map (right) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
-            {/* Chat Panel - Left */}
+          {/* ═══ Pipeline Thinking Visualizer ═══ */}
+          <PipelineVisualizer demoState={demoState} steps={appState?.orchestration_steps || []} />
+
+          {/* ═══ HERO: Chat + Map side-by-side ═══ */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Chat Panel */}
             <div className="lg:col-span-5">
               <GemmaOrchestrator 
                 onSendMessage={handleSendMessage} 
@@ -215,9 +235,49 @@ function App() {
               />
             </div>
 
-            {/* Map Panel - Right */}
+            {/* Map Panel — sticky so it doesn't stretch with chat */}
             <div className="lg:col-span-7">
-              <div className="bg-slate-800/80 backdrop-blur-md rounded-xl border border-slate-700 shadow-xl overflow-hidden h-full min-h-[500px]">
+              <div className="lg:sticky lg:top-6 relative">
+              {/* Live Weather Widget — overlays top-left of map */}
+              {liveWeather && (
+                <div className="absolute top-3 left-3 z-[600] bg-slate-900/90 backdrop-blur-md rounded-xl border border-slate-700/60 p-3 shadow-xl min-w-[220px]">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CloudRain className="w-4 h-4 text-cyan-400" />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Weather • Bhaktapur</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Thermometer className="w-3 h-3 text-orange-400" />
+                      <span className="text-xs text-slate-300">{liveWeather.temperature_c ?? '--'}°C</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <CloudRain className="w-3 h-3 text-cyan-400" />
+                      <span className="text-xs text-slate-300">{liveWeather.rainfall_today_mm ?? 0} mm</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Wind className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-300">{liveWeather.wind_speed_kmh ?? '--'} km/h</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Eye className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-300">{liveWeather.visibility_m ? `${(liveWeather.visibility_m / 1000).toFixed(1)} km` : '--'}</span>
+                    </div>
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-slate-700/50 flex items-center justify-between">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                      liveWeather.road_condition === 'Dangerous' ? 'bg-red-500/20 text-red-400' :
+                      liveWeather.road_condition === 'Wet' ? 'bg-amber-500/20 text-amber-400' :
+                      'bg-emerald-500/20 text-emerald-400'
+                    }`}>
+                      Road: {liveWeather.road_condition || 'Unknown'}
+                    </span>
+                    {liveWeather.storm_warning && (
+                      <span className="text-[10px] font-bold text-red-400 animate-pulse">⚠️ STORM</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div className="bg-slate-800/80 backdrop-blur-md rounded-xl border border-slate-700 shadow-xl overflow-hidden h-[500px]">
                 <MapWidget 
                   simulationData={appState?.context?.simulate_route_closure || appState?.context?.simulate_network_cascade}
                   mapCascade={appState?.map_cascade}
@@ -225,115 +285,156 @@ function App() {
                   evidence={appState?.evidence}
                 />
               </div>
+              </div>
             </div>
           </div>
 
-          {/* BOTTOM ROW: Results (full width) */}
+          {/* ═══ RESULTS ═══ */}
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-3 mb-4">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-3"
+            >
               <AlertTriangle className="w-5 h-5" />
               <p>{error}. Please ensure the backend is running.</p>
-            </div>
+            </motion.div>
           )}
 
           {['ORCHESTRATING', 'MAP_CASCADE'].includes(demoState) && !hasResults && (
-            <div className="flex flex-col items-center justify-center text-slate-400 border border-slate-800/50 rounded-xl p-8 text-center bg-slate-900/30 backdrop-blur-sm mb-4">
-              <Activity className="w-10 h-10 mb-3 opacity-50 animate-pulse text-emerald-500" />
-              <h2 className="text-lg font-medium mb-1 text-emerald-400">Synthesizing Context...</h2>
-              <p className="max-w-md text-sm">The orchestrator is actively evaluating constraints and testing simulation models.</p>
-            </div>
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center justify-center text-slate-400 border border-emerald-500/10 rounded-2xl p-8 text-center bg-gradient-to-b from-slate-900/60 to-slate-900/30 backdrop-blur-sm"
+            >
+              <motion.div 
+                animate={{ rotate: 360 }} 
+                transition={{ repeat: Infinity, duration: 3, ease: 'linear' }}
+                className="w-10 h-10 mb-3 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20"
+              >
+                <Activity className="w-5 h-5 text-emerald-400" />
+              </motion.div>
+              <h2 className="text-base font-semibold mb-1 text-emerald-400">Synthesizing Context…</h2>
+              <p className="max-w-sm text-sm text-slate-500">Evaluating multi-domain constraints and running simulation models.</p>
+            </motion.div>
           )}
 
-          {((['EXPERTS', 'FINAL'].includes(demoState)) || (demoState === 'IDLE' && hasResults)) && appState && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-              <EvidencePanel evidence={appState.evidence} />
-              {appState.memory && appState.memory.length > 0 && (
-                <MemoryPanel memory={appState.memory} />
-              )}
+          <AnimatePresence>
+            {((['EXPERTS', 'FINAL'].includes(demoState)) || (demoState === 'IDLE' && hasResults)) && appState && (
+              <motion.div 
+                initial={{ opacity: 0, y: 30 }} 
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="space-y-5"
+              >
+                {/* ── Evidence Stats ── */}
+                <EvidencePanel evidence={appState.evidence} />
 
-              {/* Baseline vs Optimized Comparison */}
-              {appState.comparison && <BaselineComparison comparison={appState.comparison} />}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
-                <ExpertPanel 
-                  title="Traffic Operations"
-                  icon={Activity}
-                  colorClass="bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-                  {...appState.experts.traffic}
-                />
-                <ExpertPanel 
-                  title="Infrastructure"
-                  icon={HardHat}
-                  colorClass="bg-orange-500/10 text-orange-400 border-orange-500/20"
-                  {...appState.experts.infrastructure}
-                />
-                {appState.experts.emergency && (
-                  <ExpertPanel 
-                    title="Emergency Response"
-                    icon={Siren}
-                    colorClass="bg-red-500/10 text-red-400 border-red-500/20"
-                    {...appState.experts.emergency}
-                  />
+                {/* ── Expert Verdicts (4-panel grid) ── */}
+                {appState.experts && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                    <ExpertPanel 
+                      title="Traffic Operations"
+                      icon={Activity}
+                      colorClass="bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                      {...appState.experts.traffic}
+                    />
+                    <ExpertPanel 
+                      title="Infrastructure"
+                      icon={HardHat}
+                      colorClass="bg-orange-500/10 text-orange-400 border-orange-500/20"
+                      {...appState.experts.infrastructure}
+                    />
+                    {appState.experts.emergency && (
+                      <ExpertPanel 
+                        title="Emergency Response"
+                        icon={Siren}
+                        colorClass="bg-red-500/10 text-red-400 border-red-500/20"
+                        {...appState.experts.emergency}
+                      />
+                    )}
+                    {appState.experts.planning && (
+                      <ExpertPanel 
+                        title="Strategic Planning"
+                        icon={BarChart3}
+                        colorClass="bg-violet-500/10 text-violet-400 border-violet-500/20"
+                        {...appState.experts.planning}
+                      />
+                    )}
+                  </div>
                 )}
-                {appState.experts.planning && (
-                  <ExpertPanel 
-                    title="Strategic Planning"
-                    icon={BarChart3}
-                    colorClass="bg-violet-500/10 text-violet-400 border-violet-500/20"
-                    {...appState.experts.planning}
-                  />
+
+                {/* ── Scenario Comparison (Safest / Balanced / Least Disruptive) ── */}
+                {appState.scenarios && appState.scenarios.length > 0 && (
+                  <ScenarioCards scenarios={appState.scenarios} />
                 )}
-              </div>
 
-              {/* Scenario Comparison */}
-              {appState.scenarios && <ScenarioPanel scenarios={appState.scenarios} />}
-
-              {/* Final Decision Panel */}
-              <AnimatePresence>
+                {/* ── Final Decision ── */}
                 {(demoState === 'FINAL' || (demoState === 'IDLE' && appState?.final)) && (
                   <motion.div 
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-gradient-to-br from-slate-800 to-slate-800/80 rounded-xl border border-emerald-500/30 shadow-2xl overflow-hidden relative backdrop-blur-md mb-4"
+                    initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.6, ease: 'easeOut' }}
+                    className="relative"
                   >
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-cyan-400" />
-                    <div className="p-5 border-b border-slate-700 flex items-center gap-2">
-                      <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-                      <h2 className="text-lg font-bold text-slate-100">Final Decision & Resolution</h2>
-                    </div>
+                    {/* Outer glow */}
+                    <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/20 blur-sm" />
                     
-                    <div className="p-6 space-y-6">
-                      <div>
-                        <h3 className="text-sm font-semibold text-emerald-400 uppercase tracking-wide mb-2">Action Plan</h3>
-                        <p className="text-slate-200 text-lg leading-relaxed">{appState.final?.decision}</p>
+                    <div className="relative bg-gradient-to-br from-slate-800 via-slate-800/95 to-slate-900 rounded-2xl border border-emerald-500/25 shadow-2xl overflow-hidden backdrop-blur-md">
+                      {/* Top accent bar */}
+                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400" />
+                      
+                      <div className="p-5 border-b border-slate-700/50 flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 rounded-xl flex items-center justify-center border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                        </div>
+                        <div>
+                          <h2 className="text-lg font-bold text-slate-100">Final Decision & Resolution</h2>
+                          <p className="text-[11px] text-slate-500">AI-synthesized from multi-domain analysis</p>
+                        </div>
                       </div>
                       
-                      <div>
-                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">Explanation</h3>
-                        <p className="text-slate-300">{appState.final?.explanation}</p>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-700">
-                        <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700/50">
-                          <h4 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2 mb-2">
-                            <MessageSquare className="w-4 h-4" /> Generated Notice (Nepali)
-                          </h4>
-                          <p className="text-sm text-slate-300 font-medium">{appState.final?.public_notice_nepali}</p>
+                      <div className="p-6 space-y-5">
+                        {/* Decision */}
+                        <div>
+                          <h3 className="text-[10px] font-bold text-emerald-400 uppercase tracking-[0.15em] mb-2.5 flex items-center gap-2">
+                            <Zap className="w-3 h-3" /> Action Plan
+                          </h3>
+                          <p className="text-slate-100 text-lg leading-relaxed font-medium">{appState.final?.decision}</p>
                         </div>
-                        <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700/50">
-                          <h4 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2 mb-2">
-                            <Activity className="w-4 h-4" /> SMS Alert
-                          </h4>
-                          <p className="text-sm text-slate-300 font-mono">{appState.final?.sms}</p>
+                        
+                        {/* Explanation */}
+                        <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/40">
+                          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.15em] mb-2">Explanation</h3>
+                          <p className="text-slate-300 text-sm leading-relaxed">{appState.final?.explanation}</p>
+                        </div>
+
+                        {/* Public Notice + SMS */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                          <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/30 hover:border-slate-600/50 transition-colors">
+                            <h4 className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2 mb-2.5 tracking-[0.12em]">
+                              <MessageSquare className="w-3.5 h-3.5" /> Public Notice (Nepali)
+                            </h4>
+                            <p className="text-sm text-slate-300 leading-relaxed">{appState.final?.public_notice_nepali}</p>
+                          </div>
+                          <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/30 hover:border-slate-600/50 transition-colors">
+                            <h4 className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2 mb-2.5 tracking-[0.12em]">
+                              <Activity className="w-3.5 h-3.5" /> SMS Alert
+                            </h4>
+                            <p className="text-sm text-slate-300 font-mono leading-relaxed">{appState.final?.sms}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </motion.div>
                 )}
-              </AnimatePresence>
-            </motion.div>
-          )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </main>
+
+        {/* Subtle footer */}
+        <footer className="max-w-[1600px] mx-auto mt-8 pb-4 text-center">
+          <p className="text-[10px] text-slate-700 tracking-widest uppercase">Pravah • Powered by Gemma AI</p>
+        </footer>
       </div>
     </>
   );
